@@ -1,0 +1,31 @@
+{
+  "name": "@roster/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "短视频运营工作台桌面端",
+  "author": "Roster",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-rebuild -f -w better-sqlite3 -v 33.4.11 && electron-vite dev",
+    "build": "electron-vite build",
+    "package": "npm run build && electron-builder --config ../../electron-builder.yml --dir",
+    "dist": "npm run build && electron-builder --config ../../electron-builder.yml"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.13.12",
+    "better-sqlite3": "^11.10.0",
+    "clsx": "^2.1.1",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^3.25.76",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "electron": "33.4.11"
+  }
+}

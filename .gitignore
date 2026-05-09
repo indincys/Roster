@@ -1,0 +1,16 @@
+node_modules/
+dist/
+out/
+coverage/
+.DS_Store
+*.log
+*.tmp
+*.db-journal
+*.db-wal
+*.db-shm
+*.tsbuildinfo
+apps/desktop/.vite/
+apps/desktop/dist/
+apps/desktop/release/
+apps/desktop/out/
+apps/desktop/dist-types/

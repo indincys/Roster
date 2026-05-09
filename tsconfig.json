@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared-types" },
+    { "path": "packages/db" },
+    { "path": "packages/llm-providers" },
+    { "path": "packages/image-providers" },
+    { "path": "packages/skill-engine" },
+    { "path": "packages/rpa-bridge" },
+    { "path": "packages/ffmpeg-utils" },
+    { "path": "apps/desktop" }
+  ]
+}

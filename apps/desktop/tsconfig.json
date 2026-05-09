@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "outDir": "dist-types",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["renderer/src/*"],
+      "@roster/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@roster/db": ["../../packages/db/src/index.ts"],
+      "@roster/image-providers": ["../../packages/image-providers/src/index.ts"]
+    }
+  },
+  "include": [
+    "electron.vite.config.ts",
+    "main/src/**/*.ts",
+    "preload/src/**/*.ts",
+    "renderer/src/**/*.ts",
+    "renderer/src/**/*.tsx"
+  ],
+  "references": [
+    { "path": "../../packages/shared-types" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/image-providers" }
+  ]
+}

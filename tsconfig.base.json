@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@roster/shared-types": ["packages/shared-types/src/index.ts"],
+      "@roster/db": ["packages/db/src/index.ts"],
+      "@roster/llm-providers": ["packages/llm-providers/src/index.ts"],
+      "@roster/image-providers": ["packages/image-providers/src/index.ts"],
+      "@roster/skill-engine": ["packages/skill-engine/src/index.ts"],
+      "@roster/rpa-bridge": ["packages/rpa-bridge/src/index.ts"],
+      "@roster/ffmpeg-utils": ["packages/ffmpeg-utils/src/index.ts"]
+    }
+  }
+}

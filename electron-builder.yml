@@ -1,0 +1,51 @@
+appId: com.roster.shortvideo.workbench
+productName: 短视频运营工作台
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "resources/ffmpeg/**"
+  - "node_modules/better-sqlite3/**"
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+  - dist-types/**/*
+extraResources:
+  - from: ../../tools/ffmpeg
+    to: ffmpeg
+    filter:
+      - "**/*"
+      - "!**/.DS_Store"
+mac:
+  identity: YourApp Self-Signed
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  notarize: false
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  publisherName: Roster
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  differentialPackage: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+publish:
+  provider: github
+  owner: indincys
+  repo: Roster
+  releaseType: release
