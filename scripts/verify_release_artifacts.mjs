@@ -282,7 +282,7 @@ async function main() {
   passOrFailEqual("builder publish provider", builderConfig?.publish?.provider, "github");
   passOrFailEqual("builder publish releaseType", builderConfig?.publish?.releaseType, "release");
   if (isPlaceholderPublishValue(builderConfig?.publish?.owner) || isPlaceholderPublishValue(builderConfig?.publish?.repo)) {
-    warn("builder publish GitHub repository", "electron-builder.yml publish.owner and publish.repo must be replaced with the real GitHub release repository");
+    warn("builder publish GitHub repository", "electron-builder.yml publish.owner and publish.repo must be configured and release assets must be reachable without a private client token");
   } else {
     pass("builder publish GitHub repository", `${builderConfig.publish.owner}/${builderConfig.publish.repo}`);
   }
