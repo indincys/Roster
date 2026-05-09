@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   ApiKeyPublicRecord,
+  ApiKeySaveInput,
   BootstrapState,
   SoftwareUpdateCheckResult,
   WorkspaceCreateInput,
@@ -41,7 +42,7 @@ interface AppStore {
   loadBootstrap(): Promise<void>;
   createWorkspace(input: WorkspaceCreateInput): Promise<void>;
   switchWorkspace(workspaceId: string): Promise<void>;
-  saveApiKey(input: { provider: "openai" | "anthropic" | "google" | "mock"; label: string; apiKey: string }): Promise<ApiKeyPublicRecord>;
+  saveApiKey(input: ApiKeySaveInput): Promise<ApiKeyPublicRecord>;
 }
 
 export function activeWorkspace(bootstrap: BootstrapState | null): WorkspaceRecord | null {

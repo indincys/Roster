@@ -14,6 +14,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { mergeConfiguredLlmModels } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 
@@ -48,7 +49,7 @@ interface SkillForm {
   content: string;
 }
 
-const skillTestModelPresets: SkillTestModel[] = [
+const defaultSkillTestModelPresets: SkillTestModel[] = [
   { provider: "mock", model: "mock-skill-test" },
   { provider: "openai", model: "gpt-5.4-mini" },
   { provider: "anthropic", model: "claude-sonnet-4.5" },
@@ -129,7 +130,8 @@ export function SkillCenterPage(): JSX.Element {
   const [activeFilePath, setActiveFilePath] = useState("SKILL.md");
   const [activeFileContent, setActiveFileContent] = useState("");
   const [testPrompt, setTestPrompt] = useState("请用当前 Skill 生成一段测试输出。");
-  const [testModel, setTestModel] = useState<SkillTestModel>(skillTestModelPresets[0]);
+  const [skillTestModelPresets, setSkillTestModelPresets] = useState<SkillTestModel[]>(defaultSkillTestModelPresets);
+  const [testModel, setTestModel] = useState<SkillTestModel>(defaultSkillTestModelPresets[0]);
   const [testResult, setTestResult] = useState<SkillTestResult | null>(null);
   const [message, setMessage] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -166,6 +168,13 @@ export function SkillCenterPage(): JSX.Element {
     void loadSkills();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace?.id]);
+
+  useEffect(() => {
+    window.roster
+      .getSettings()
+      .then((loaded) => setSkillTestModelPresets(mergeConfiguredLlmModels(defaultSkillTestModelPresets, loaded)))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let canceled = false;

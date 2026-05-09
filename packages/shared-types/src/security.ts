@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { ProviderIdSchema } from "./provider";
 
-export const ProviderKindSchema = z.enum(["openai", "anthropic", "google", "mock"]);
+export const ProviderKindSchema = ProviderIdSchema;
 
 export const ApiKeySaveInputSchema = z.object({
   provider: ProviderKindSchema,

@@ -56,7 +56,7 @@ Success criteria:
 | macOS DMG/ZIP artifacts, checksum, integrity, and blockmaps | `apps/desktop/release/*.dmg`, `*.zip`, `*.blockmap`; `npm run release:verify` now runs `hdiutil verify` and `unzip -tq` | Done |
 | Update manifest publishing primitive | `scripts/generate_update_manifest.mjs`, `apps/desktop/release/latest.json`, `npm run release:manifest` | Done |
 | Release artifact verifier | `scripts/verify_release_artifacts.mjs`, `npm run release:verify`; verifier now checks `electron-builder.yml`, GitHub release workflow presence, policy-critical macOS/Windows builder fields, `asarUnpack` for native modules and ffmpeg resources, app bundle, ASAR, native module, icon, bundle metadata, DMG/ZIP/blockmaps, manifest hashes/URLs, ffmpeg resources, self-signed codesign state, Windows NSIS candidate, and live paid-provider warning. It no longer gates Apple Developer ID, notarization, stapler, Windows signing, or portable artifacts. | Done |
-| Direct GitHub release workflow scaffold | `.github/workflows/release.yml` builds quality gates, macOS arm64 artifacts, Windows x64 artifacts, uploads update metadata, and creates a draft GitHub Release | Done; blocked at runtime until real GitHub owner/repo and macOS signing secrets are supplied |
+| Direct GitHub release workflow scaffold | `.github/workflows/release.yml` builds quality gates, macOS arm64 artifacts, Windows x64 artifacts, uploads update metadata, and creates a draft GitHub Release | Done; blocked at runtime until macOS signing secrets are supplied and release assets are publicly reachable |
 | App updater contract | `apps/desktop/main/src/index.ts`, `packages/shared-types/src/maintenance.ts`, `packages/shared-types/src/ipc.ts`, `apps/desktop/preload/src/index.ts`, `apps/desktop/renderer/src/stores/app-store.ts`, `AppShell.tsx`; uses `autoUpdater.autoDownload = false`, `autoInstallOnAppQuit = true`, `quitAndInstall(true, true)`, 5-second initial check and 4-hour interval; right-top update action triggers check/download/install through typed IPC | Done |
 | Final review / equivalent code audit | `FINAL_REVIEW.md` findings, blockers, and verification evidence | Done |
 
@@ -79,7 +79,7 @@ Commands passed in this checkpoint sequence:
 
 Strict public-release readiness gate:
 
-- `npm run release:verify:strict` now enforces `RELEASE_POLICY.md` and is expected to fail until real GitHub publish owner/repo, macOS self-signed identity/secrets, Windows artifacts, bundled ffmpeg binaries, and live paid-provider acceptance exist. Historical Developer ID / notarization / stapler / Windows signing / portable warnings are no longer release blockers.
+- `npm run release:verify:strict` now enforces `RELEASE_POLICY.md` and is expected to fail until macOS self-signed identity/secrets, Windows artifacts, bundled ffmpeg binaries, live paid-provider acceptance, and public release-asset access exist. Historical Developer ID / notarization / stapler / Windows signing / portable warnings are no longer release blockers.
 
 ## Release Blockers
 
@@ -87,13 +87,13 @@ These are not completed and must not be reported as finished:
 
 | Blocker | Evidence | Needed |
 | --- | --- | --- |
-| Direct GitHub release external inputs | `electron-builder.yml`, `electron-updater` IPC/UI wiring, release verifier, and `.github/workflows/release.yml` are in place; verifier warns that `publish.owner`/`publish.repo` are placeholders and that local keychain lacks `YourApp Self-Signed` | Real GitHub owner/repo values, macOS `YourApp Self-Signed` identity, encrypted `.p12`, and CI `CSC_LINK` / `CSC_KEY_PASSWORD` secrets |
+| Direct GitHub release external inputs | `electron-builder.yml`, `electron-updater` IPC/UI wiring, release verifier, and `.github/workflows/release.yml` are in place; `publish.owner`/`publish.repo` are configured as `indincys/Roster`; verifier still warns that local keychain lacks `YourApp Self-Signed` | macOS `YourApp Self-Signed` identity, encrypted `.p12`, CI `CSC_LINK` / `CSC_KEY_PASSWORD` secrets, and public accessibility for release assets |
 | Windows NSIS artifact generation and full Windows desktop verification | `electron-builder.yml` has an unsigned Windows NSIS x64 target; `npm run release:verify:strict` reports missing Windows `.exe` artifact and that full Windows desktop verification must run on Windows | Windows build/verification environment and unsigned Windows x64 NSIS artifact per `RELEASE_POLICY.md` |
 | Bundled redistributable ffmpeg binaries | `release:verify` now warns `tools/ffmpeg` and packaged `Contents/Resources/ffmpeg` both have `files=0`, `ffmpeg=missing`, `ffprobe=missing`, and `missingPlatformTools=darwin/ffmpeg,darwin/ffprobe,win32/ffmpeg.exe,win32/ffprobe.exe`; Homebrew ffmpeg is dynamically linked and not a suitable committed redistributable binary | Approved per-platform ffmpeg/ffprobe binaries plus license review |
-| Real paid provider credentials and live provider verification | Provider adapters are implemented and locally unit-tested with mocked HTTP; `release:verify` explicitly warns live paid-provider success is not checked locally; real OpenAI/Anthropic/Gemini/OpenAI Image endpoint success requires keys and network | User-provided API keys and network-enabled provider acceptance tests |
+| Live provider verification | Custom text LLM Provider configuration is implemented for API key, `baseURL`, model ID, vendor label, fixed vendors, and OpenAI-compatible user-defined vendors. Provider adapters are locally unit-tested with mocked HTTP; `release:verify` explicitly warns live paid-provider success is not checked locally. | Run user-entered real API keys and network-enabled provider acceptance tests |
 
 ## Conclusion
 
 The repository is locally complete for implemented v1 desktop workflows, real Electron desktop verification, policy-aligned packaging configuration, auto-update IPC/UI wiring, GitHub release workflow scaffolding, macOS directory packaging, performance checks, README/user manual, app icon, update manifest, and release artifact structure.
 
-The overall objective is not fully complete because public release still needs real GitHub release repository values, macOS self-signed certificate material, Windows environment access/artifacts, approved redistributable ffmpeg binaries, and live paid-provider credentials.
+The overall objective is not fully complete because public release still needs macOS self-signed certificate material, Windows environment access/artifacts, approved redistributable ffmpeg binaries, live paid-provider credentials/network acceptance, and public accessibility for GitHub Release assets.

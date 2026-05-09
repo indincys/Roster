@@ -4,6 +4,7 @@ import type { ScriptWorkspaceColumnResult, ScriptWorkspaceModel, SkillRecord } f
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { mergeConfiguredLlmModels } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 
@@ -58,6 +59,15 @@ export function ScriptWorkspacePage(): JSX.Element {
   useEffect(() => {
     void loadSkills();
   }, [workspace?.id]);
+
+  useEffect(() => {
+    window.roster
+      .getSettings()
+      .then((loaded) => {
+        setModels((current) => mergeConfiguredLlmModels(current, loaded) as ModelOption[]);
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(
     () =>

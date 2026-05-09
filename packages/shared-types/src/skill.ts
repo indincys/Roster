@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProviderIdSchema } from "./provider";
 
 export const SkillWorkflowTypeSchema = z.enum(["title", "image_prompt", "image", "script", "cover"]);
 export const SkillSourceTypeSchema = z.enum(["official", "copy", "user"]);
@@ -103,7 +104,7 @@ export const SkillActivationUpdateInputSchema = z.object({
 });
 
 export const SkillTestModelSchema = z.object({
-  provider: z.enum(["mock", "openai", "anthropic", "google"]),
+  provider: ProviderIdSchema,
   model: z.string().trim().min(1)
 });
 
@@ -115,7 +116,7 @@ export const SkillTestInputSchema = z.object({
 
 export const SkillTestResultSchema = z.object({
   skillId: z.string().min(1),
-  provider: z.enum(["mock", "openai", "anthropic", "google"]),
+  provider: ProviderIdSchema,
   model: z.string().min(1),
   status: z.enum(["success", "failed"]),
   text: z.string(),

@@ -60,7 +60,7 @@ Latest local verification commands that passed:
 
 Latest release-ready gate that is expected to fail:
 
-- `npm run release:verify:strict` exits non-zero because real GitHub `publish.owner`/`publish.repo`, macOS `YourApp Self-Signed` identity/secrets, Windows artifacts/verification, bundled ffmpeg/ffprobe, and live paid-provider success are not complete.
+- `npm run release:verify:strict` exits non-zero because macOS `YourApp Self-Signed` identity/secrets, Windows artifacts/verification, bundled ffmpeg/ffprobe, live paid-provider success, and public release-asset access are not complete.
 
 Latest resume recheck:
 
@@ -75,13 +75,13 @@ These items are explicitly not complete and should not be reported as finished:
 
 | Requirement | Current evidence | Why not complete here |
 | --- | --- | --- |
-| Direct GitHub release external inputs | `electron-builder.yml`, `.github/workflows/release.yml`, `electron-updater` IPC/UI, and release verifier are implemented; verifier warns that GitHub owner/repo are placeholders and local keychain lacks `YourApp Self-Signed` | Requires real GitHub release repository values plus macOS self-signed certificate, encrypted `.p12`, and CI secrets |
+| Direct GitHub release external inputs | `electron-builder.yml`, `.github/workflows/release.yml`, `electron-updater` IPC/UI, and release verifier are implemented; GitHub owner/repo are configured as `indincys/Roster`; verifier warns that local keychain lacks `YourApp Self-Signed` | Requires macOS self-signed certificate, encrypted `.p12`, CI secrets, and public accessibility for release assets |
 | Windows NSIS artifacts and full Windows desktop acceptance | Windows NSIS x64 target exists in `electron-builder.yml`; `npm run release:verify:strict` reports missing Windows artifact and that full Windows desktop verification must run on Windows | Requires Windows build/verification environment |
 | Bundled redistributable ffmpeg/ffprobe binaries | `npm run release:verify` warns both `tools/ffmpeg` and packaged `Contents/Resources/ffmpeg` have `files=0`, `ffmpeg=missing`, `ffprobe=missing`, and `missingPlatformTools=darwin/ffmpeg,darwin/ffprobe,win32/ffmpeg.exe,win32/ffprobe.exe` | Requires approved redistributable binaries and license review before committing/packaging |
-| Live paid-provider success acceptance | Provider adapters are implemented; unit tests use injected fetch; Electron e2e checks missing-key isolation and safe logs; `npm run release:verify` warns live paid-provider success is not checked locally | Requires user-provided OpenAI/Anthropic/Gemini/OpenAI Image keys and network-enabled acceptance |
+| Live paid-provider success acceptance | Custom text LLM Provider configuration is implemented for API key, `baseURL`, model ID, vendor label, fixed vendors, and OpenAI-compatible user-defined vendors; unit tests use injected fetch; Electron e2e checks missing-key isolation and safe logs; `npm run release:verify` warns live paid-provider success is not checked locally | Requires user-entered real keys and network-enabled acceptance |
 
 ## Conclusion
 
 All repository-local implementation, quality-gate, real Electron desktop verification, policy-aligned packaging/update wiring, GitHub workflow scaffolding, macOS directory packaging, manifest, verifier, README, final review, and completion-audit work that can be completed on this macOS host is complete.
 
-The overall objective is not globally achieved because the remaining requirements depend on external release inputs: real GitHub release repository values, macOS self-signed certificate material, a Windows environment/artifacts, approved ffmpeg binaries, and real paid-provider keys/network.
+The overall objective is not globally achieved because the remaining requirements depend on macOS self-signed certificate material, a Windows environment/artifacts, approved ffmpeg binaries, real paid-provider keys/network, and public accessibility for GitHub Release assets.

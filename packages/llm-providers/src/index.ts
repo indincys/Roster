@@ -1,4 +1,4 @@
-export type LlmProviderId = "openai" | "anthropic" | "google" | "mock";
+export type LlmProviderId = string;
 export type LLMProviderErrorCode = "NetworkError" | "RateLimited" | "InvalidAPIKey" | "ContentRejected" | "Canceled" | "ProviderError";
 
 export interface TokenUsage {
@@ -48,6 +48,7 @@ export interface HttpProviderOptions {
   fetch?: ProviderFetch;
   baseUrl?: string;
   apiKey?: string;
+  id?: string;
 }
 
 export class LLMProviderError extends Error {
@@ -186,6 +187,36 @@ function extractResponseOutputText(body: unknown): string {
   return chunks.join("");
 }
 
+function extractChatCompletionText(body: unknown): string {
+  if (!body || typeof body !== "object") {
+    return "";
+  }
+  const choices = (body as Record<string, unknown>).choices;
+  if (!Array.isArray(choices)) {
+    return "";
+  }
+  const chunks: string[] = [];
+  for (const choice of choices) {
+    if (!choice || typeof choice !== "object") {
+      continue;
+    }
+    const message = (choice as Record<string, unknown>).message;
+    const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : null;
+    if (typeof content === "string") {
+      chunks.push(content);
+      continue;
+    }
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part && typeof part === "object" && typeof (part as Record<string, unknown>).text === "string") {
+          chunks.push((part as { text: string }).text);
+        }
+      }
+    }
+  }
+  return chunks.join("");
+}
+
 function extractAnthropicText(body: unknown): string {
   if (!body || typeof body !== "object") {
     return "";
@@ -231,6 +262,15 @@ function usageFromOpenAI(body: unknown): TokenUsage {
   const record = usage && typeof usage === "object" ? (usage as Record<string, unknown>) : {};
   const inputTokens = typeof record.input_tokens === "number" ? record.input_tokens : 0;
   const outputTokens = typeof record.output_tokens === "number" ? record.output_tokens : 0;
+  const totalTokens = typeof record.total_tokens === "number" ? record.total_tokens : inputTokens + outputTokens;
+  return { inputTokens, outputTokens, totalTokens };
+}
+
+function usageFromChatCompletion(body: unknown): TokenUsage {
+  const usage = body && typeof body === "object" ? (body as Record<string, unknown>).usage : null;
+  const record = usage && typeof usage === "object" ? (usage as Record<string, unknown>) : {};
+  const inputTokens = typeof record.prompt_tokens === "number" ? record.prompt_tokens : 0;
+  const outputTokens = typeof record.completion_tokens === "number" ? record.completion_tokens : 0;
   const totalTokens = typeof record.total_tokens === "number" ? record.total_tokens : inputTokens + outputTokens;
   return { inputTokens, outputTokens, totalTokens };
 }
@@ -316,7 +356,7 @@ function buildMockScript(request: ChatRequest): string {
 }
 
 export class MockLLMProvider implements LLMProvider {
-  readonly name = "mock" as const;
+  readonly name = "mock";
 
   async listModels(): Promise<string[]> {
     return ["mock-title-fast", "mock-title-balanced", "mock-fail"];
@@ -375,15 +415,18 @@ export class MockLLMProvider implements LLMProvider {
 }
 
 export class OpenAILLMProvider implements LLMProvider {
-  readonly name = "openai" as const;
+  readonly name: string;
   private readonly fetchImpl: ProviderFetch;
   private readonly baseUrl: string;
   private readonly apiKey?: string;
+  private readonly endpoint: "responses" | "chat-completions";
 
-  constructor(options: HttpProviderOptions = {}) {
+  constructor(options: HttpProviderOptions & { endpoint?: "responses" | "chat-completions" } = {}) {
+    this.name = options.id ?? "openai";
     this.fetchImpl = options.fetch ?? fetch;
-    this.baseUrl = options.baseUrl ?? "https://api.openai.com/v1";
+    this.baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
     this.apiKey = options.apiKey;
+    this.endpoint = options.endpoint ?? "responses";
   }
 
   async listModels(): Promise<string[]> {
@@ -399,6 +442,30 @@ export class OpenAILLMProvider implements LLMProvider {
 
   async chat(request: ChatRequest): Promise<ChatStream> {
     const apiKey = requireApiKey(request);
+    if (this.endpoint === "chat-completions") {
+      const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: request.model,
+          messages: [
+            ...(request.systemPrompt ? [{ role: "system", content: request.systemPrompt }] : []),
+            { role: "user", content: request.userPrompt }
+          ],
+          temperature: request.temperature,
+          max_tokens: request.maxTokens
+        }),
+        signal: request.abortSignal
+      });
+      const body = await parseJsonResponse(response);
+      if (!response.ok) {
+        throw classifyHttpFailure(response.status, body);
+      }
+      return completedStream(extractChatCompletionText(body), usageFromChatCompletion(body));
+    }
     const response = await this.fetchImpl(`${this.baseUrl}/responses`, {
       method: "POST",
       headers: {
@@ -424,14 +491,15 @@ export class OpenAILLMProvider implements LLMProvider {
 }
 
 export class AnthropicLLMProvider implements LLMProvider {
-  readonly name = "anthropic" as const;
+  readonly name: string;
   private readonly fetchImpl: ProviderFetch;
   private readonly baseUrl: string;
   private readonly apiKey?: string;
 
   constructor(options: HttpProviderOptions = {}) {
+    this.name = options.id ?? "anthropic";
     this.fetchImpl = options.fetch ?? fetch;
-    this.baseUrl = options.baseUrl ?? "https://api.anthropic.com/v1";
+    this.baseUrl = (options.baseUrl ?? "https://api.anthropic.com/v1").replace(/\/+$/, "");
     this.apiKey = options.apiKey;
   }
 
@@ -473,14 +541,15 @@ export class AnthropicLLMProvider implements LLMProvider {
 }
 
 export class GoogleLLMProvider implements LLMProvider {
-  readonly name = "google" as const;
+  readonly name: string;
   private readonly fetchImpl: ProviderFetch;
   private readonly baseUrl: string;
   private readonly apiKey?: string;
 
   constructor(options: HttpProviderOptions = {}) {
+    this.name = options.id ?? "google";
     this.fetchImpl = options.fetch ?? fetch;
-    this.baseUrl = options.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
+    this.baseUrl = (options.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
     this.apiKey = options.apiKey;
   }
 

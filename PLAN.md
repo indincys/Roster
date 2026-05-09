@@ -118,19 +118,24 @@ tools/ffmpeg/win32/ffprobe.exe
 - 视频元数据、缩略图、封面时间轴、封面保存流程通过真实 Electron 桌面验证。
 - `npm run release:verify:strict` 不再报告 ffmpeg/ffprobe 缺失。
 
-### 4. Live Paid-Provider Success Verification
+### 4. Custom Provider Configuration And Live Success Verification
 
 交付项：
 
-- 用户提供真实 API key。
-- OpenAI 文本调用成功。
-- Anthropic 文本调用成功。
-- Gemini 文本调用成功。
-- OpenAI Image 调用成功。
+- 设置页支持自定义 Provider 配置。已完成。
+- 支持输入并加密保存 API key。已完成。
+- 支持输入 `baseURL`。已完成。
+- 支持输入模型 ID。已完成。
+- 支持输入模型厂商显示名。已完成。
+- 支持固定厂商和用户自定义厂商。已完成。
+- 固定厂商至少包含 OpenAI、Anthropic、Gemini、DeepSeek、Kimi、Doubao、Qwen、GLM。已完成。
+- 支持 OpenAI-compatible 文本接口，用于 DeepSeek、Kimi、Doubao、Qwen、GLM 及用户自定义厂商。已完成。
+- 用户在应用 UI 中输入真实 API key 后，OpenAI-compatible、Anthropic、Gemini 和 OpenAI Image 等真实调用成功。
 
 验收范围：
 
-- 设置页保存 key。
+- 设置页保存自定义 Provider。已通过 typecheck 和单元测试覆盖。
+- 设置页保存 key、`baseURL`、模型 ID 和厂商显示名。已通过 typecheck 和单元测试覆盖。
 - 连接测试成功。
 - 标题工作区生成成功。
 - 文案工作区生成成功。

@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { ProviderIdSchema } from "./provider";
 
-export const ApiCallProviderSchema = z.enum(["openai", "anthropic", "google", "mock"]);
+export const ApiCallProviderSchema = ProviderIdSchema;
 export const ApiCallWorkflowSchema = z.enum([
   "title_workspace",
   "script_workspace",

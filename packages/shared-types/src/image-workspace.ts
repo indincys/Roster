@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { ImageLibraryItemSchema } from "./image";
+import { ProviderIdSchema } from "./provider";
 
 export const ImagePromptWorkspaceModelSchema = z.object({
-  provider: z.enum(["mock", "openai", "anthropic", "google"]),
+  provider: ProviderIdSchema,
   model: z.string().trim().min(1)
 });
 
@@ -45,7 +46,7 @@ export const ImagePromptWorkspaceGenerateResultSchema = z.object({
   scene: z.string().min(1),
   prompts: z.array(z.string().trim().min(1)),
   text: z.string(),
-  provider: z.enum(["mock", "openai", "anthropic", "google"]),
+  provider: ProviderIdSchema,
   model: z.string().min(1),
   usage: z
     .object({

@@ -12,6 +12,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { mergeConfiguredLabeledLlmModels } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 
 type ImageStudioTab = "prompt" | "library" | "generate";
@@ -21,7 +22,7 @@ const imageModelOptions = [
   { label: "Mock 本地", value: "mock-image" },
   { label: "OpenAI GPT Image", value: "gpt-image-1.5" }
 ] as const;
-const textModelOptions: Array<ImagePromptWorkspaceModel & { label: string }> = [
+const defaultTextModelOptions: Array<ImagePromptWorkspaceModel & { label: string }> = [
   { label: "Mock 文本", provider: "mock", model: "mock-title-fast" },
   { label: "OpenAI GPT", provider: "openai", model: "gpt-5.4-mini" },
   { label: "Anthropic Claude", provider: "anthropic", model: "claude-sonnet-4-5" },
@@ -88,7 +89,8 @@ export function ImageStudioPage(): JSX.Element {
   const [promptCount, setPromptCount] = useState(5);
   const [promptSkills, setPromptSkills] = useState<SkillRecord[]>([]);
   const [selectedPromptSkillId, setSelectedPromptSkillId] = useState("");
-  const [promptModel, setPromptModel] = useState<ImagePromptWorkspaceModel>(textModelOptions[0]);
+  const [textModelOptions, setTextModelOptions] = useState<Array<ImagePromptWorkspaceModel & { label: string }>>(defaultTextModelOptions);
+  const [promptModel, setPromptModel] = useState<ImagePromptWorkspaceModel>(defaultTextModelOptions[0]);
   const [newSceneName, setNewSceneName] = useState("");
   const [draftPrompts, setDraftPrompts] = useState<string[]>([]);
   const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(new Set());
@@ -128,6 +130,13 @@ export function ImageStudioPage(): JSX.Element {
 
   useEffect(() => {
     void loadData();
+  }, []);
+
+  useEffect(() => {
+    window.roster
+      .getSettings()
+      .then((loaded) => setTextModelOptions(mergeConfiguredLabeledLlmModels(defaultTextModelOptions, loaded)))
+      .catch(() => undefined);
   }, []);
 
   async function loadScenePresets(): Promise<void> {

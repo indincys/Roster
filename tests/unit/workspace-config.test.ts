@@ -111,7 +111,11 @@ describe("ConfigDatabase workspace lifecycle", () => {
       scanFrequency: "manual",
       backupScope: "all",
       backupRetentionCount: 7,
-      providerRetryCount: 3
+      providerRetryCount: 3,
+      llmProviderConfigs: expect.arrayContaining([
+        expect.objectContaining({ id: "deepseek", adapter: "openai-compatible", defaultModel: "deepseek-chat" }),
+        expect.objectContaining({ id: "qwen", adapter: "openai-compatible", defaultModel: "qwen-plus" })
+      ])
     });
     const saved = db.saveSettings({
       scanFrequency: "interval",
@@ -119,7 +123,19 @@ describe("ConfigDatabase workspace lifecycle", () => {
       excelFieldNaming: "en",
       backupScope: "database",
       backupRetentionCount: 3,
-      providerRetryCount: 2
+      providerRetryCount: 2,
+      llmProviderConfigs: [
+        {
+          id: "custom",
+          label: "Custom API",
+          vendor: "Custom",
+          adapter: "openai-compatible",
+          baseUrl: "https://api.example.com/v1",
+          defaultModel: "custom-chat",
+          enabled: true,
+          isBuiltin: false
+        }
+      ]
     });
     expect(saved).toMatchObject({
       scanFrequency: "interval",
@@ -127,7 +143,8 @@ describe("ConfigDatabase workspace lifecycle", () => {
       excelFieldNaming: "en",
       backupScope: "database",
       backupRetentionCount: 3,
-      providerRetryCount: 2
+      providerRetryCount: 2,
+      llmProviderConfigs: [expect.objectContaining({ id: "custom", baseUrl: "https://api.example.com/v1" })]
     });
     db.close();
 

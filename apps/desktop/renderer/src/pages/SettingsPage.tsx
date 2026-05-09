@@ -3,11 +3,14 @@ import type { FormEvent } from "react";
 import type {
   ApiKeyConnectionTestResult,
   AppSettings,
+  LlmProviderAdapter,
+  LlmProviderConfig,
   PlatformAccountRecord,
   ProviderKind,
   SoftwareUpdateCheckResult,
   WorkspaceCloudSyncCheckResult
 } from "@roster/shared-types";
+import { DEFAULT_LLM_PROVIDER_CONFIGS, ProviderIdSchema } from "@roster/shared-types";
 import {
   Archive,
   Cloud,
@@ -37,6 +40,16 @@ export function SettingsPage(): JSX.Element {
   const [apiKey, setApiKey] = useState("");
   const [apiProvider, setApiProvider] = useState<ProviderKind>("openai");
   const [apiLabel, setApiLabel] = useState("默认 OpenAI Key");
+  const [providerDraft, setProviderDraft] = useState<LlmProviderConfig>(() => ({
+    id: "custom-provider",
+    label: "自定义 Provider",
+    vendor: "Custom",
+    adapter: "openai-compatible",
+    baseUrl: "https://api.example.com/v1",
+    defaultModel: "custom-model",
+    enabled: true,
+    isBuiltin: false
+  }));
   const [apiKeyTestResults, setApiKeyTestResults] = useState<Record<string, ApiKeyConnectionTestResult>>({});
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [backupPath, setBackupPath] = useState<string | null>(null);
@@ -93,6 +106,44 @@ export function SettingsPage(): JSX.Element {
     const saved = await window.roster.saveSettings(input);
     setSettings(saved);
     setSavedMessage("设置已保存并立即生效。");
+  };
+
+  const providerConfigs = useMemo(() => settings?.llmProviderConfigs ?? [...DEFAULT_LLM_PROVIDER_CONFIGS], [settings?.llmProviderConfigs]);
+  const providerLabels = useMemo(
+    () => new Map(providerConfigs.map((config) => [config.id, config.label])),
+    [providerConfigs]
+  );
+
+  const saveProviderConfigs = async (configs: LlmProviderConfig[], message = "Provider 配置已保存。"): Promise<void> => {
+    const saved = await window.roster.saveSettings({ llmProviderConfigs: configs });
+    setSettings(saved);
+    setSavedMessage(message);
+  };
+
+  const upsertProviderConfig = async (config: LlmProviderConfig): Promise<void> => {
+    const parsed = {
+      ...config,
+      id: ProviderIdSchema.parse(config.id),
+      baseUrl: config.baseUrl?.trim() ? config.baseUrl.trim().replace(/\/+$/, "") : null
+    };
+    const next = [...providerConfigs.filter((candidate) => candidate.id !== parsed.id), parsed].sort((left, right) =>
+      left.label.localeCompare(right.label, "zh-Hans-CN")
+    );
+    await saveProviderConfigs(next);
+    setApiProvider(parsed.id);
+    setApiLabel(`默认 ${parsed.label} Key`);
+  };
+
+  const toggleProviderConfig = async (providerId: string): Promise<void> => {
+    await saveProviderConfigs(
+      providerConfigs.map((config) => (config.id === providerId ? { ...config, enabled: !config.enabled } : config)),
+      "Provider 启用状态已保存。"
+    );
+  };
+
+  const restoreBuiltinProviders = async (): Promise<void> => {
+    const custom = providerConfigs.filter((config) => !config.isBuiltin);
+    await saveProviderConfigs([...DEFAULT_LLM_PROVIDER_CONFIGS, ...custom], "内置 Provider 已恢复为推荐默认值。");
   };
 
   const submitWorkspace = async (event: FormEvent): Promise<void> => {
@@ -410,6 +461,115 @@ export function SettingsPage(): JSX.Element {
               <ShieldCheck className="size-4 text-emerald-600" />
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 rounded-md border border-border bg-background p-3" data-provider-config-section>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">模型厂商</div>
+                    <p className="mt-1 text-xs text-muted-foreground">保存 baseURL、模型 ID 和厂商名称；OpenAI-compatible 用于 DeepSeek、Kimi、Doubao、Qwen、GLM 和自定义接口。</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => void restoreBuiltinProviders()} data-restore-builtin-providers>
+                    <RotateCcw />
+                    恢复内置
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    label="Provider ID"
+                    value={providerDraft.id}
+                    onChange={(event) => setProviderDraft((current) => ({ ...current, id: event.target.value.trim().toLowerCase() }))}
+                    data-provider-config-id
+                  />
+                  <Input
+                    label="厂商显示名"
+                    value={providerDraft.label}
+                    onChange={(event) => setProviderDraft((current) => ({ ...current, label: event.target.value }))}
+                    data-provider-config-label
+                  />
+                  <Input
+                    label="模型厂商"
+                    value={providerDraft.vendor}
+                    onChange={(event) => setProviderDraft((current) => ({ ...current, vendor: event.target.value }))}
+                    data-provider-config-vendor
+                  />
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className="font-medium text-foreground">接口类型</span>
+                    <select
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
+                      value={providerDraft.adapter}
+                      onChange={(event) =>
+                        setProviderDraft((current) => ({ ...current, adapter: event.target.value as LlmProviderAdapter }))
+                      }
+                      data-provider-config-adapter
+                    >
+                      <option value="openai-compatible">OpenAI-compatible</option>
+                      <option value="openai">OpenAI Responses</option>
+                      <option value="anthropic">Anthropic</option>
+                      <option value="google">Google Gemini</option>
+                      <option value="mock">Mock 本地测试</option>
+                    </select>
+                  </label>
+                  <Input
+                    label="baseURL"
+                    value={providerDraft.baseUrl ?? ""}
+                    onChange={(event) => setProviderDraft((current) => ({ ...current, baseUrl: event.target.value || null }))}
+                    placeholder="https://api.example.com/v1"
+                    data-provider-config-base-url
+                  />
+                  <Input
+                    label="默认模型 ID"
+                    value={providerDraft.defaultModel}
+                    onChange={(event) => setProviderDraft((current) => ({ ...current, defaultModel: event.target.value }))}
+                    data-provider-config-model
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  onClick={() => void upsertProviderConfig(providerDraft)}
+                  disabled={
+                    !providerDraft.id.trim() ||
+                    !providerDraft.label.trim() ||
+                    !providerDraft.vendor.trim() ||
+                    !providerDraft.defaultModel.trim() ||
+                    (providerDraft.adapter === "openai-compatible" && !providerDraft.baseUrl?.trim())
+                  }
+                  data-save-provider-config
+                >
+                  <Plus />
+                  保存 Provider
+                </Button>
+                <div className="flex max-h-48 flex-col gap-2 overflow-auto">
+                  {providerConfigs.map((config) => (
+                    <div
+                      key={config.id}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
+                      data-provider-config-row={config.id}
+                    >
+                      <button
+                        className="min-w-0 text-left"
+                        type="button"
+                        onClick={() => {
+                          setProviderDraft(config);
+                          setApiProvider(config.id);
+                          setApiLabel(`默认 ${config.label} Key`);
+                        }}
+                      >
+                        <div className="truncate font-medium">
+                          {config.label} / {config.defaultModel}
+                        </div>
+                        <div className="truncate font-mono text-xs text-muted-foreground">
+                          {config.id} · {config.adapter} · {config.baseUrl ?? "local"}
+                        </div>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={config.enabled ? "success" : "warning"}>{config.enabled ? "启用" : "停用"}</Badge>
+                        <Button variant="outline" size="sm" onClick={() => void toggleProviderConfig(config.id)} data-toggle-provider-config={config.id}>
+                          {config.enabled ? "停用" : "启用"}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <form className="flex flex-col gap-3" onSubmit={(event) => void submitApiKey(event)}>
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-foreground">Provider</span>
@@ -419,10 +579,11 @@ export function SettingsPage(): JSX.Element {
                     onChange={(event) => setApiProvider(event.target.value as ProviderKind)}
                     data-api-key-provider
                   >
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="google">Google Gemini</option>
-                    <option value="mock">Mock 本地测试</option>
+                    {providerConfigs.map((config) => (
+                      <option key={config.id} value={config.id}>
+                        {config.label} / {config.defaultModel}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <Input label="凭证标签" value={apiLabel} onChange={(event) => setApiLabel(event.target.value)} />
@@ -450,7 +611,7 @@ export function SettingsPage(): JSX.Element {
                         <div className="flex items-center justify-between gap-2">
                           <span>{key.label}</span>
                           <div className="flex items-center gap-2">
-                            <Badge variant="neutral">{key.provider}</Badge>
+                            <Badge variant="neutral">{providerLabels.get(key.provider) ?? key.provider}</Badge>
                             <Button variant="outline" size="sm" onClick={() => void testApiKey(key.id)} data-test-api-key={key.id}>
                               测试连接
                             </Button>

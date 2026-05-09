@@ -63,9 +63,11 @@
    - 添加已通过许可审查的 `tools/ffmpeg/win32/ffprobe.exe`。
    - 重新打包并确认 packaged resources 中包含对应二进制。
 
-4. Live paid-provider success verification
-   - 使用用户提供的真实 API key。
-   - 在网络可用环境中验证 OpenAI、Anthropic、Gemini、OpenAI Image 的成功调用。
+4. Custom Provider configuration and live paid-provider success verification
+   - 设置页已支持自定义文本 LLM Provider 配置，覆盖 API key、`baseURL`、模型 ID、模型厂商显示名和启用状态。
+   - 已内置 OpenAI、Anthropic、Gemini、DeepSeek、Kimi、Doubao、Qwen、GLM，并支持 OpenAI-compatible 用户自定义厂商。
+   - 标题工作区、文案工作区、Skill 即时测试和图片提示词生成入口会读取已启用 Provider 的默认模型。
+   - 用户在应用 UI 中输入真实 API key 后，在网络可用环境中验证 OpenAI-compatible、Anthropic、Gemini、OpenAI Image 等成功调用。
    - 验证标题、文案、图片工作流产出。
    - 验证 `api_call_log` 和反馈包不包含明文 key 或敏感提示词泄露。
 
@@ -73,4 +75,4 @@
 
 当前本地功能开发任务为无。当前 macOS 本地 Electron 验收任务为无。
 
-AI 执行 `/goal` 时只处理 `Remaining External Release Tasks`。打包、签名、发布和自动更新以 `RELEASE_POLICY.md` 为准。缺少 macOS 自签名证书、Windows 环境、许可审查后的 ffmpeg/ffprobe 二进制、真实 API key 或网络验收条件时，停止并报告外部阻塞项。
+AI 执行 `/goal` 时只处理 `Remaining External Release Tasks`。打包、签名、发布和自动更新以 `RELEASE_POLICY.md` 为准。缺少 macOS 自签名证书、Windows 环境、许可审查后的 ffmpeg/ffprobe 二进制、真实 API key 或网络验收条件时，停止并报告阻塞项。

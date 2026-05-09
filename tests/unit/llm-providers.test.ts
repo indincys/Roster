@@ -101,6 +101,43 @@ describe("LLM provider abstraction", () => {
     });
   });
 
+  it("calls OpenAI-compatible chat completions with a custom base URL", async () => {
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    const provider = new OpenAILLMProvider({
+      id: "deepseek",
+      baseUrl: "https://api.deepseek.test/v1/",
+      endpoint: "chat-completions",
+      fetch: async (url, init) => {
+        requests.push({ url: String(url), init: init ?? {} });
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "自定义模型返回" } }],
+            usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 }
+          }),
+          { status: 200 }
+        );
+      }
+    });
+
+    const result = await collectChatWithRetry(provider, {
+      model: "deepseek-chat",
+      systemPrompt: "系统",
+      userPrompt: "用户",
+      apiKey: "custom-key"
+    });
+
+    expect(requests[0]?.url).toBe("https://api.deepseek.test/v1/chat/completions");
+    expect(JSON.parse(String(requests[0]?.init.body))).toMatchObject({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: "系统" },
+        { role: "user", content: "用户" }
+      ]
+    });
+    expect(result.fullText).toBe("自定义模型返回");
+    expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 4, totalTokens: 9 });
+  });
+
   it("calls Anthropic Messages API and parses content blocks", async () => {
     const provider = new AnthropicLLMProvider({
       fetch: async (_url, init) => {

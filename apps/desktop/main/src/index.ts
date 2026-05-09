@@ -71,6 +71,7 @@ import {
   type ApiCallWorkflow,
   type BootstrapState,
   type ApiKeyConnectionTestResult,
+  type LlmProviderConfig,
   type TitleWorkspaceColumnResult,
   type SoftwareUpdateCheckResult,
   type SoftwareUpdateInstallResult,
@@ -99,10 +100,14 @@ import {
 import { createDefaultImageProviders, imageDimensions as getImageDimensions } from "@roster/image-providers";
 import {
   LLMProviderError,
-  createDefaultLLMProviders,
+  AnthropicLLMProvider,
+  GoogleLLMProvider,
+  MockLLMProvider,
+  OpenAILLMProvider,
   runModelsAllSettled,
   type ChatCompletionResult,
-  type ChatRequest
+  type ChatRequest,
+  type LLMProvider
 } from "@roster/llm-providers";
 import { expandSkillPrompt } from "@roster/skill-engine";
 
@@ -754,10 +759,8 @@ function installSoftwareUpdate(): SoftwareUpdateInstallResult {
 }
 
 async function listProviderModels(provider: string, apiKey: string): Promise<string[]> {
-  if (!isApiCallProvider(provider)) {
-    throw new Error("UnsupportedProvider");
-  }
-  const llmProvider = createDefaultLLMProviders({ apiKey })[provider];
+  const config = getLlmProviderConfig(provider);
+  const llmProvider = config ? createLlmProviderFromConfig(config, apiKey) : null;
   if (!llmProvider) {
     throw new Error("UnsupportedProvider");
   }
@@ -1025,8 +1028,27 @@ async function getLatestApiKeyForProvider(provider: ApiCallProvider): Promise<st
   return (await getConfigDb().getApiKeySecret(key.id)).apiKey;
 }
 
-function isApiCallProvider(value: string): value is ApiCallProvider {
-  return value === "mock" || value === "openai" || value === "anthropic" || value === "google";
+function getLlmProviderConfig(provider: string): LlmProviderConfig | null {
+  return getConfigDb().getSettings().llmProviderConfigs.find((config) => config.id === provider && config.enabled) ?? null;
+}
+
+function createLlmProviderFromConfig(config: LlmProviderConfig, apiKey?: string): LLMProvider | null {
+  if (config.adapter === "mock") {
+    return new MockLLMProvider();
+  }
+  if (config.adapter === "openai") {
+    return new OpenAILLMProvider({ id: config.id, baseUrl: config.baseUrl ?? undefined, apiKey, endpoint: "responses" });
+  }
+  if (config.adapter === "openai-compatible") {
+    return new OpenAILLMProvider({ id: config.id, baseUrl: config.baseUrl ?? undefined, apiKey, endpoint: "chat-completions" });
+  }
+  if (config.adapter === "anthropic") {
+    return new AnthropicLLMProvider({ id: config.id, baseUrl: config.baseUrl ?? undefined, apiKey });
+  }
+  if (config.adapter === "google") {
+    return new GoogleLLMProvider({ id: config.id, baseUrl: config.baseUrl ?? undefined, apiKey });
+  }
+  return null;
 }
 
 function providerErrorCode(error: unknown): string {
@@ -1074,12 +1096,12 @@ async function runSingleLlmProvider(input: {
   workflow: Extract<ApiCallWorkflow, "skill_test" | "image_prompt_workspace">;
   db: WorkspaceDatabase;
 }): Promise<ChatCompletionResult> {
-  const providers = createDefaultLLMProviders();
-  const provider = providers[input.provider];
+  const apiKey = input.provider === "mock" ? undefined : await getLatestApiKeyForProvider(input.provider);
+  const config = getLlmProviderConfig(input.provider);
+  const provider = config ? createLlmProviderFromConfig(config, apiKey ?? undefined) : null;
   if (!provider) {
     throw new Error(`Provider 未注册：${input.provider}`);
   }
-  const apiKey = input.provider === "mock" ? undefined : await getLatestApiKeyForProvider(input.provider);
   if (input.provider !== "mock" && !apiKey) {
     throw new LLMProviderError("InvalidAPIKey", `未配置 ${input.provider} API key`, false);
   }
@@ -1133,10 +1155,11 @@ async function runLlmModelsWithProviders(input: {
     | { status: "rejected"; columnId: string; provider: ApiCallProvider; model: string; reason: string }
   >
 > {
-  const providers = createDefaultLLMProviders();
 	const rows = await Promise.all(
 		input.models.map(async (model, index) => {
-			const provider = providers[model.provider];
+      const apiKey = model.provider === "mock" ? undefined : await getLatestApiKeyForProvider(model.provider);
+      const config = getLlmProviderConfig(model.provider);
+			const provider = config ? createLlmProviderFromConfig(config, apiKey ?? undefined) : null;
 			const columnId = `${model.provider}:${model.model}:${index}`;
       if (!provider) {
         return {
@@ -1149,7 +1172,6 @@ async function runLlmModelsWithProviders(input: {
       }
       const startedAt = new Date().toISOString();
       try {
-        const apiKey = model.provider === "mock" ? undefined : await getLatestApiKeyForProvider(model.provider);
         if (model.provider !== "mock" && !apiKey) {
           throw new LLMProviderError("InvalidAPIKey", `未配置 ${model.provider} API key`, false);
         }
@@ -1233,10 +1255,11 @@ async function runLlmModelsWithProvidersStreaming(input: {
     | { status: "rejected"; columnId: string; provider: ApiCallProvider; model: string; reason: string }
   >
 > {
-  const providers = createDefaultLLMProviders();
   const rows = await Promise.all(
     input.models.map(async (model, index) => {
-      const provider = providers[model.provider];
+      const apiKey = model.provider === "mock" ? undefined : await getLatestApiKeyForProvider(model.provider);
+      const config = getLlmProviderConfig(model.provider);
+      const provider = config ? createLlmProviderFromConfig(config, apiKey ?? undefined) : null;
       const columnId = `${model.provider}:${model.model}:${index}`;
 			if (!provider) {
 				return {
@@ -1248,7 +1271,6 @@ async function runLlmModelsWithProvidersStreaming(input: {
         };
       }
       const startedAt = new Date().toISOString();
-      const apiKey = model.provider === "mock" ? undefined : await getLatestApiKeyForProvider(model.provider);
       if (model.provider !== "mock" && !apiKey) {
         const error = new LLMProviderError("InvalidAPIKey", `未配置 ${model.provider} API key`, false);
         logApiCall({

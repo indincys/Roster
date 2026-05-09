@@ -205,6 +205,17 @@ npm run release:verify:strict
 - `tests/e2e/electron-desktop-audit.mjs` 是当前真实 Electron 桌面审计入口。
 - `tests/e2e/electron-m7-performance.mjs` 是当前真实 Electron 性能验收入口。
 
+Windows 真实桌面验收：
+
+- 局域网内 Windows 10/11 x64 机器作为长期 Windows runner。
+- Windows 机器应启用 OpenSSH Server，`sshd` 设为 Automatic，并通过 Windows 防火墙放行 TCP 22。
+- Mac 端使用专用 SSH key `~/.ssh/roster_windows_ed25519` 登录 Windows，不在聊天中传递 Windows 密码。
+- Windows 用户的 `authorized_keys` 中应包含 Mac 端公钥 `roster-windows-ssh`。
+- 后续 Windows 构建、打包、命令行测试和日志收集优先通过 Mac -> Windows SSH 执行。
+- 真实桌面窗口、安装器交互、SmartScreen 提示、Electron UI 验收可通过用户已授权的 UU 远程控制窗口操作。
+- 通过 UU 远程修改远程访问、防火墙、账号或安全策略前，必须有用户明确授权；当前用户已授权启用持久化 SSH 并配置防火墙，用于本项目 Windows 测试和 debug。
+- Windows 验收结果必须记录实际 Windows 用户、主机名、局域网 IP、命令和产物路径。
+
 必须覆盖的测试领域：
 
 - 任务单生成算法。
@@ -216,6 +227,8 @@ npm run release:verify:strict
 - Provider 错误处理、取消、重试和多模型 `allSettled` 容错。
 - API key 加密存储和脱敏。
 - 大列表虚拟化。
+
+Provider live 验收当前暂缓。设置页已支持自定义文本 LLM Provider 配置，可输入 `baseURL`、模型 ID、模型厂商、API key，并内置 OpenAI、Anthropic、Gemini、DeepSeek、Kimi、Doubao、Qwen、GLM 及用户自定义 OpenAI-compatible Provider。恢复 live paid-provider 验收前，需要用户在真实网络环境中录入可用 API key 并验证标题、文案、图片提示词和图片生成工作流。
 
 ## Release Gates
 

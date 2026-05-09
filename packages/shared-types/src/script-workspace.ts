@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { ProviderIdSchema } from "./provider";
 
 export const ScriptWorkspaceModelSchema = z.object({
-  provider: z.enum(["mock", "openai", "anthropic", "google"]),
+  provider: ProviderIdSchema,
   model: z.string().trim().min(1)
 });
 
@@ -14,7 +15,7 @@ export const ScriptWorkspaceGenerateInputSchema = z.object({
 
 export const ScriptWorkspaceColumnResultSchema = z.object({
   columnId: z.string().min(1),
-  provider: z.enum(["mock", "openai", "anthropic", "google"]),
+  provider: ProviderIdSchema,
   model: z.string().min(1),
   status: z.enum(["success", "failed"]),
   text: z.string(),
@@ -50,7 +51,7 @@ export const ScriptWorkspaceStreamEventSchema = z.discriminatedUnion("type", [
     columns: z.array(
       z.object({
         columnId: z.string().min(1),
-        provider: z.enum(["mock", "openai", "anthropic", "google"]),
+        provider: ProviderIdSchema,
         model: z.string().min(1)
       })
     )

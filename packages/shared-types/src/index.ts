@@ -4,6 +4,7 @@ export * from "./image";
 export * from "./image-workspace";
 export * from "./maintenance";
 export * from "./path";
+export * from "./provider";
 export * from "./prompt";
 export * from "./script";
 export * from "./script-workspace";
