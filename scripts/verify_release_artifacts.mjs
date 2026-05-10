@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global URL, console, process */
+/* global AbortController, URL, clearTimeout, console, fetch, process, setTimeout */
 
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -94,6 +94,18 @@ async function fileDigest(filePath, algorithm) {
   return hash.digest(algorithm === "sha512" ? "base64" : "hex");
 }
 
+async function fetchJson(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const body = await response.json().catch(() => null);
+    return { ok: response.ok, status: response.status, body };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function listFiles(rootPath) {
   const entries = await readdir(rootPath, { recursive: true, withFileTypes: true }).catch(() => []);
   const files = [];
@@ -136,6 +148,62 @@ async function requireFile(name, filePath) {
   }
 }
 
+async function verifyUpdaterYaml(fileName, expectedExt) {
+  const updaterPath = path.join(releaseDir, fileName);
+  if (!(await exists(updaterPath))) {
+    fail(`${fileName} update metadata`, "missing");
+    return;
+  }
+  const metadata = yaml.load(await readFile(updaterPath, "utf8"));
+  if (!metadata || typeof metadata !== "object") {
+    fail(`${fileName} update metadata`, "must parse to an object");
+    return;
+  }
+  if (metadata.version === JSON.parse(await readFile(desktopPackagePath, "utf8")).version) {
+    pass(`${fileName} version`, metadata.version);
+  } else {
+    fail(`${fileName} version`, `expected desktop package version, actual=${metadata.version}`);
+  }
+  const files = Array.isArray(metadata.files) ? metadata.files : [];
+  if (typeof metadata.path === "string" && metadata.path.endsWith(expectedExt)) {
+    pass(`${fileName} path`, metadata.path);
+  } else {
+    fail(`${fileName} path`, `must point to a ${expectedExt} artifact`);
+  }
+  if (files.length > 0) {
+    pass(`${fileName} files`, `${files.length} entries`);
+  } else {
+    fail(`${fileName} files`, "missing files entries");
+  }
+  for (const entry of files) {
+    if (!entry || typeof entry !== "object" || typeof entry.url !== "string") {
+      fail(`${fileName} file entry`, "entry url is missing");
+      continue;
+    }
+    if (entry.url.includes("/") || entry.url.includes("\\")) {
+      fail(`${fileName} file url: ${entry.url}`, "must be a release asset filename, not a path");
+      continue;
+    }
+    const artifactPath = path.join(releaseDir, entry.url);
+    if (!(await exists(artifactPath))) {
+      fail(`${fileName} file exists: ${entry.url}`, "missing file");
+      continue;
+    }
+    const actualSize = await fileSize(artifactPath);
+    if (entry.size === actualSize) {
+      pass(`${fileName} file size: ${entry.url}`, String(actualSize));
+    } else {
+      fail(`${fileName} file size: ${entry.url}`, `metadata=${entry.size}, actual=${actualSize}`);
+    }
+    const actualSha512 = await fileDigest(artifactPath, "sha512");
+    if (entry.sha512 === actualSha512) {
+      pass(`${fileName} file sha512: ${entry.url}`);
+    } else {
+      fail(`${fileName} file sha512: ${entry.url}`, "digest mismatch");
+    }
+  }
+}
+
 async function inspectFfmpegResources(rootPath, label) {
   const files = await listFiles(rootPath);
   const normalized = files.map((filePath) => {
@@ -145,6 +213,10 @@ async function inspectFfmpegResources(rootPath, label) {
   });
   const ffmpegBinaries = normalized.filter((file) => file.basename === "ffmpeg" || file.basename === "ffmpeg.exe");
   const ffprobeBinaries = normalized.filter((file) => file.basename === "ffprobe" || file.basename === "ffprobe.exe");
+  const windowsDlls = normalized.filter((file) => {
+    const parts = file.relativePath.split(path.sep);
+    return parts[0] === "win32" && file.basename.endsWith(".dll");
+  });
   const platformDirs = Array.from(
     new Set(
       normalized
@@ -173,6 +245,10 @@ async function inspectFfmpegResources(rootPath, label) {
     platformDirs,
     ffmpeg: ffmpegBinaries.map((file) => file.relativePath).sort(),
     ffprobe: ffprobeBinaries.map((file) => file.relativePath).sort(),
+    windowsDlls: windowsDlls.map((file) => file.relativePath).sort(),
+    missingWindowsDlls: ["avcodec", "avformat", "avutil"].filter(
+      (dllPrefix) => !windowsDlls.some((file) => file.basename.startsWith(`${dllPrefix}-`))
+    ),
     missingPlatformTools: requiredFfmpegPlatforms.flatMap((platformName) => {
       const executableSuffix = platformName === "win32" ? ".exe" : "";
       return ["ffmpeg", "ffprobe"]
@@ -195,6 +271,8 @@ function describeFfmpegInspection(inspection) {
     `platformDirs=${inspection.platformDirs.length ? inspection.platformDirs.join(",") : "none"}`,
     `ffmpeg=${inspection.ffmpeg.length ? inspection.ffmpeg.join(",") : "missing"}`,
     `ffprobe=${inspection.ffprobe.length ? inspection.ffprobe.join(",") : "missing"}`,
+    inspection.windowsDlls?.length ? `win32Dlls=${inspection.windowsDlls.length}` : null,
+    inspection.missingWindowsDlls?.length ? `missingWindowsDlls=${inspection.missingWindowsDlls.join(",")}` : null,
     inspection.missingPlatformTools.length ? `missingPlatformTools=${inspection.missingPlatformTools.join(",")}` : null,
     inspection.nonExecutablePosix.length ? `nonExecutable=${inspection.nonExecutablePosix.join(",")}` : null
   ]
@@ -285,6 +363,19 @@ async function main() {
     warn("builder publish GitHub repository", "electron-builder.yml publish.owner and publish.repo must be configured and release assets must be reachable without a private client token");
   } else {
     pass("builder publish GitHub repository", `${builderConfig.publish.owner}/${builderConfig.publish.repo}`);
+    if (strictReleaseReady) {
+      const repoApiUrl = `https://api.github.com/repos/${builderConfig.publish.owner}/${builderConfig.publish.repo}`;
+      try {
+        const repo = await fetchJson(repoApiUrl);
+        if (repo.ok && repo.body?.private === false) {
+          pass("GitHub release asset public access", `${builderConfig.publish.owner}/${builderConfig.publish.repo} is public`);
+        } else {
+          warn("GitHub release asset public access", `repository must be public or release assets must otherwise be reachable without a client token; GitHub status=${repo.status}`);
+        }
+      } catch (error) {
+        warn("GitHub release asset public access", `could not verify repository visibility: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
 
   await requireFile("app bundle", appPath);
@@ -364,6 +455,8 @@ async function main() {
   } else {
     fail("macOS ZIP artifact", "missing");
   }
+  await verifyUpdaterYaml("latest-mac.yml", ".zip");
+  await verifyUpdaterYaml("latest.yml", ".exe");
 
   if (await exists(manifestPath)) {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -441,10 +534,12 @@ async function main() {
     sourceFfmpeg.ffmpeg.length > 0 &&
     sourceFfmpeg.ffprobe.length > 0 &&
     sourceFfmpeg.missingPlatformTools.length === 0 &&
+    sourceFfmpeg.missingWindowsDlls.length === 0 &&
     sourceFfmpeg.nonExecutablePosix.length === 0 &&
     packagedFfmpeg.ffmpeg.length > 0 &&
     packagedFfmpeg.ffprobe.length > 0 &&
     packagedFfmpeg.missingPlatformTools.length === 0 &&
+    packagedFfmpeg.missingWindowsDlls.length === 0 &&
     packagedFfmpeg.nonExecutablePosix.length === 0
   ) {
     pass("bundled ffmpeg resources", `${describeFfmpegInspection(sourceFfmpeg)}; ${describeFfmpegInspection(packagedFfmpeg)}`);

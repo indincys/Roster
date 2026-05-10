@@ -17,7 +17,7 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "mock",
     baseUrl: null,
     defaultModel: "mock-title-fast",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   },
   {
@@ -27,7 +27,7 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "openai",
     baseUrl: "https://api.openai.com/v1",
     defaultModel: "gpt-5.4-mini",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   },
   {
@@ -37,7 +37,7 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "anthropic",
     baseUrl: "https://api.anthropic.com/v1",
     defaultModel: "claude-sonnet-4-5",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   },
   {
@@ -47,7 +47,7 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "google",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     defaultModel: "gemini-2.5-flash",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   },
   {
@@ -57,7 +57,7 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "openai-compatible",
     baseUrl: "https://api.deepseek.com/v1",
     defaultModel: "deepseek-chat",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   },
   {
@@ -67,7 +67,7 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "openai-compatible",
     baseUrl: "https://api.moonshot.cn/v1",
     defaultModel: "moonshot-v1-8k",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   },
   {
@@ -77,7 +77,7 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "openai-compatible",
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
     defaultModel: "doubao-seed-1-6",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   },
   {
@@ -87,7 +87,7 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "openai-compatible",
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     defaultModel: "qwen-plus",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   },
   {
@@ -97,10 +97,51 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
     adapter: "openai-compatible",
     baseUrl: "https://open.bigmodel.cn/api/paas/v4",
     defaultModel: "glm-4-plus",
-    enabled: true,
+    enabled: false,
     isBuiltin: true
   }
 ] as const;
+
+const SECRET_LIKE_PATTERN = /(sk-[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{8,}|anthropic[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)/i;
+
+export function containsSecretLikeToken(value: string | null | undefined): boolean {
+  return typeof value === "string" && SECRET_LIKE_PATTERN.test(value);
+}
+
+export function isSafeLlmProviderConfig(config: {
+  id: string;
+  label: string;
+  vendor: string;
+  baseUrl?: string | null;
+  defaultModel: string;
+}): boolean {
+  return ![config.id, config.label, config.vendor, config.baseUrl ?? "", config.defaultModel].some((value) =>
+    containsSecretLikeToken(value)
+  );
+}
+
+export function sanitizeLlmProviderConfigs<T extends {
+  id: string;
+  label: string;
+  vendor: string;
+  baseUrl?: string | null;
+  defaultModel: string;
+}>(configs: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const sanitized: T[] = [];
+  for (const config of configs) {
+    if (!isSafeLlmProviderConfig(config)) {
+      continue;
+    }
+    const key = `${config.id}:${config.defaultModel}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    sanitized.push(config);
+  }
+  return sanitized;
+}
 
 export const LlmProviderConfigSchema = z
   .object({

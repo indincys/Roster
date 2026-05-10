@@ -13,7 +13,7 @@ export const AppSettingsSchema = z.object({
   providerConcurrencyLimit: z.number().int().min(1).max(20).default(3),
   providerRetryCount: z.number().int().min(0).max(10).default(3),
   providerRetryBaseDelayMs: z.number().int().min(100).max(60_000).default(1000),
-  llmProviderConfigs: z.array(LlmProviderConfigSchema).min(1).default([...DEFAULT_LLM_PROVIDER_CONFIGS]),
+  llmProviderConfigs: z.array(LlmProviderConfigSchema).default([...DEFAULT_LLM_PROVIDER_CONFIGS]),
   monthlyBudgetWarningCents: z.number().int().min(0).max(100_000_000).default(0),
   backupScope: z.enum(["database", "database_skills", "all"]).default("all"),
   backupRetentionCount: z.number().int().min(1).max(100).default(7),

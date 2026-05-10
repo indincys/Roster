@@ -115,7 +115,7 @@ npm --workspace @roster/desktop run dist
 - ASAR：开启。
 - native 模块：`better-sqlite3` 由 electron-builder rebuild 并放入 `app.asar.unpacked`。
 - 图标：`apps/desktop/build/icon.icns`，可用 `swift scripts/generate_app_icon.swift` 后再运行 `iconutil -c icns apps/desktop/build/icon.iconset -o apps/desktop/build/icon.icns` 重新生成。
-- ffmpeg：预留 `tools/ffmpeg/` 作为 `extraResources` 来源；真实二进制应按平台放入 `tools/ffmpeg/darwin/ffmpeg`、`tools/ffmpeg/darwin/ffprobe`、`tools/ffmpeg/win32/ffmpeg.exe`、`tools/ffmpeg/win32/ffprobe.exe`，打包后会进入 `Contents/Resources/ffmpeg` 或对应 Windows resources 目录。
+- ffmpeg：已按平台随包，来源和许可记录见 `tools/ffmpeg/README.md`。macOS 使用 `tools/ffmpeg/darwin/ffmpeg`、`tools/ffmpeg/darwin/ffprobe`；Windows 使用 `tools/ffmpeg/win32/ffmpeg.exe`、`tools/ffmpeg/win32/ffprobe.exe` 和 LGPL shared DLLs。
 
 macOS 首次安装可能触发 Gatekeeper 提示，Windows 首次安装可能触发 SmartScreen 提示；这是当前免费直发策略的预期行为。后续更新通过应用内右上角提醒图标下载并安装，不跳转 GitHub 手动下载。
 
@@ -128,7 +128,7 @@ macOS 首次安装可能触发 Gatekeeper 提示，Windows 首次安装可能触
 - 启动 5 秒后检查一次更新，之后每 4 小时检查一次。
 - 更新事件通过 typed IPC 同步到 renderer，由 Zustand store 管理 UI 状态。
 - 右上角提醒图标只在更新状态不是 `idle` 时显示。
-- `electron-builder.yml` 中的 `publish.owner` 和 `publish.repo` 已配置为 `indincys/Roster`；正式面向普通用户自动更新前，发布仓库或 Release 资产必须无需客户端 token 即可访问。
+- `electron-builder.yml` 中的 `publish.owner` 和 `publish.repo` 已配置为 `indincys/Roster`；该 GitHub 仓库当前为 public，Release 资产可无需客户端 token 访问。
 
 ### 发布前检查
 
@@ -136,18 +136,18 @@ macOS 首次安装可能触发 Gatekeeper 提示，Windows 首次安装可能触
 2. 运行 `npm run test:e2e:electron`，确认真实 Electron main/preload/renderer 链路、SQLite、文件系统、导出和状态扫描通过。
 3. 运行 `npm run test:performance:electron`，确认大列表和 100 行任务单性能未退化。
 4. 运行 `npm run package` 并启动 `apps/desktop/release/mac-arm64/短视频运营工作台.app` 做本地包 smoke。
-5. 按 `RELEASE_POLICY.md` 配置 macOS 自签名证书 `YourApp Self-Signed`，CI 使用 `CSC_LINK` 和 `CSC_KEY_PASSWORD` 注入。
-6. 在 GitHub Actions macOS + Windows 双 runner 上构建发布包，确认产物包含：
+5. 确认 macOS 自签名证书 `YourApp Self-Signed` 存在；当前 `.p12` 备份位于仓库外 `~/.roster/release/YourApp-Self-Signed.p12`，CI 已通过 `CSC_LINK` 和 `CSC_KEY_PASSWORD` 注入。
+6. 在 GitHub Actions macOS + Windows 双 runner 上构建发布包，或使用当前已验证的本机/Windows runner 产物，确认包含：
    - macOS: `.dmg`、`.zip`、`latest-mac.yml`
    - Windows: `.exe`、`.exe.blockmap`、`latest.yml`
 7. 运行 `npm run release:verify`，确认 app bundle、ASAR、native 模块、图标、DMG/ZIP、NSIS installer、update metadata、blockmap、ffmpeg/ffprobe resources 和 artifact integrity 存在且一致。该 verifier 按 `RELEASE_POLICY.md` 检查当前发布策略，不再把 Apple Developer ID、notarization、stapling、Windows 签名或 Windows portable 作为门禁。
    - 普通模式用于本机结构检查，允许 warnings 存在。
    - 公开发布前必须运行 `npm run release:verify:strict`；严格模式会把任何 warning 视为失败，避免把缺 Windows/ffmpeg/live-provider 验收或更新链路破损的包误判为可发布。也可以直接使用 `node scripts/verify_release_artifacts.mjs --strict` 或 `ROSTER_RELEASE_STRICT=1 npm run release:verify`。
-8. 在 Windows 环境生成并验证 NSIS 包，覆盖同一套工作空间、导出和状态回写流程。
+8. 在 Windows 环境生成并验证 NSIS 包，覆盖同一套工作空间、导出和状态回写流程；当前已在 `INDINCYSWINDOWS` 真实 Windows runner 上通过。
 9. 验证应用内更新：旧版本启动 5 秒后可发现 GitHub Release 新版本，右上角提醒图标出现，用户点击后可下载、校验、安装并重启。
 10. 保存真实 API key 后，在网络可用的环境里验证 OpenAI-compatible、Anthropic、Gemini、OpenAI Image 等成功调用，确认标题/文案/图片输出和脱敏日志。
 
-当前已验证的本地 macOS artifacts 位于 `apps/desktop/release/`。历史 Apple Developer ID / notarization 方案已废弃，不作为当前发布门禁。
+当前已验证的 macOS/Windows artifacts 位于 `apps/desktop/release/`。历史 Apple Developer ID / notarization 方案已废弃，不作为当前发布门禁。
 
 ## 当前状态
 
@@ -156,5 +156,5 @@ macOS 首次安装可能触发 Gatekeeper 提示，Windows 首次安装可能触
 - 工作空间：创建时生成 `workspace.db`、`workspace.json`、`workspace.lock`、`videos/`、`covers/`、`images/`、`tasks/`、`skills_config/`、`_backup/`。
 - 凭证：API key 使用本机 vault 密钥进行 AES-256-GCM 加密，数据库只保存密文、IV、auth tag 和指纹。
 - UI：顶部条、左侧栏、Dashboard、任务单、视频库、数据库、Skill、标题/图片/文案/封面工作区、设置和定时任务总览。
-- 发布阻塞：公开分发仍需要 macOS `YourApp Self-Signed` 证书和 CI secrets、Windows NSIS x64 构建和真实桌面验收、经许可审查的 `ffmpeg`/`ffprobe` 随包二进制、真实 API key + 网络环境下的 live paid-provider success 验证，以及确认 GitHub Release 资产对普通客户端可访问。
+- 发布阻塞：当前只剩真实 API key + 网络环境下的 live paid-provider success 验证。macOS signing、Windows x64 NSIS、ffmpeg/ffprobe 随包、GitHub public Release 资产访问均已完成。
 - 进度：详见 `PROGRESS.md`。

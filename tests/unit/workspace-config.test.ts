@@ -92,10 +92,14 @@ describe("ConfigDatabase workspace lifecycle", () => {
     const saved = await db.saveApiKey({
       provider: "openai",
       label: "测试 Key",
+      model: "gpt-5.4-mini",
+      isDefault: true,
       apiKey
     });
 
     expect(saved.provider).toBe("openai");
+    expect(saved.model).toBe("gpt-5.4-mini");
+    expect(saved.isDefault).toBe(true);
     expect(db.listApiKeys()).toHaveLength(1);
     const configDbBytes = await readFile(path.join(userDataPath, "config.db"));
     expect(configDbBytes.toString("latin1")).not.toContain(apiKey);
@@ -113,8 +117,8 @@ describe("ConfigDatabase workspace lifecycle", () => {
       backupRetentionCount: 7,
       providerRetryCount: 3,
       llmProviderConfigs: expect.arrayContaining([
-        expect.objectContaining({ id: "deepseek", adapter: "openai-compatible", defaultModel: "deepseek-chat" }),
-        expect.objectContaining({ id: "qwen", adapter: "openai-compatible", defaultModel: "qwen-plus" })
+        expect.objectContaining({ id: "deepseek", adapter: "openai-compatible", defaultModel: "deepseek-chat", enabled: false }),
+        expect.objectContaining({ id: "qwen", adapter: "openai-compatible", defaultModel: "qwen-plus", enabled: false })
       ])
     });
     const saved = db.saveSettings({
@@ -151,5 +155,70 @@ describe("ConfigDatabase workspace lifecycle", () => {
     const reopened = await ConfigDatabase.open(userDataPath);
     expect(reopened.getSettings()).toMatchObject(saved);
     reopened.close();
+  });
+
+  it("stores multiple API keys per provider and keeps only one default", async () => {
+    const userDataPath = await makeTempRoot("roster-user-data-");
+    const db = await ConfigDatabase.open(userDataPath);
+
+    const first = await db.saveApiKey({
+      provider: "deepseek",
+      label: "DeepSeek 主账号",
+      model: "deepseek-chat",
+      isDefault: true,
+      apiKey: "sk-deepseek-primary-1234567890"
+    });
+    const second = await db.saveApiKey({
+      provider: "deepseek",
+      label: "DeepSeek 备用账号",
+      model: "deepseek-reasoner",
+      isDefault: true,
+      apiKey: "sk-deepseek-backup-1234567890"
+    });
+
+    const keys = db.listApiKeys().filter((key) => key.provider === "deepseek");
+    expect(keys).toHaveLength(2);
+    expect(keys.find((key) => key.id === first.id)?.isDefault).toBe(false);
+    expect(keys.find((key) => key.id === second.id)).toMatchObject({
+      label: "DeepSeek 备用账号",
+      model: "deepseek-reasoner",
+      isDefault: true
+    });
+    db.close();
+  });
+
+  it("sanitizes secret-looking provider configs before returning settings", async () => {
+    const userDataPath = await makeTempRoot("roster-user-data-");
+    const db = await ConfigDatabase.open(userDataPath);
+
+    db.saveSettings({
+      llmProviderConfigs: [
+        {
+          id: "deepseek",
+          label: "DeepSeek",
+          vendor: "DeepSeek",
+          adapter: "openai-compatible",
+          baseUrl: "https://api.deepseek.com/v1",
+          defaultModel: "deepseek-chat",
+          enabled: true,
+          isBuiltin: true
+        },
+        {
+          id: "leaked",
+          label: "Leaked",
+          vendor: "Leaked",
+          adapter: "openai-compatible",
+          baseUrl: "https://api.example.com/v1",
+          defaultModel: "sk-2576628c6e1f4a08805a22ab97050000",
+          enabled: true,
+          isBuiltin: false
+        }
+      ]
+    });
+
+    const settings = db.getSettings();
+    expect(settings.llmProviderConfigs.map((config) => config.id)).toEqual(["deepseek"]);
+    expect(JSON.stringify(settings)).not.toContain("sk-2576628c");
+    db.close();
   });
 });

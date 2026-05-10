@@ -6,6 +6,8 @@ export const ProviderKindSchema = ProviderIdSchema;
 export const ApiKeySaveInputSchema = z.object({
   provider: ProviderKindSchema,
   label: z.string().trim().min(1).default("默认凭证"),
+  model: z.string().trim().min(1).max(160).nullable().optional(),
+  isDefault: z.boolean().optional().default(false),
   apiKey: z.string().min(8, "API key 长度不足")
 });
 
@@ -13,6 +15,8 @@ export const ApiKeyPublicRecordSchema = z.object({
   id: z.string(),
   provider: ProviderKindSchema,
   label: z.string(),
+  model: z.string().nullable(),
+  isDefault: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string()
 });

@@ -429,6 +429,10 @@ function redactSensitiveText(value: string): string {
   return value.replace(SECRET_PATTERN, "***");
 }
 
+function redactModels(models: string[]): string[] {
+  return models.map((model) => redactSensitiveText(model)).filter((model) => model !== "***" && !model.includes("***"));
+}
+
 function detectCloudProvider(rootPath: string): WorkspaceCloudSyncCheckResult["provider"] {
   const normalized = rootPath.toLowerCase().replaceAll("\\", "/");
   if (normalized.includes("onedrive")) {
@@ -771,7 +775,7 @@ async function testApiKeyConnection(apiKeyId: string): Promise<ApiKeyConnectionT
   const checkedAt = new Date().toISOString();
   try {
     const { record, apiKey } = await getConfigDb().getApiKeySecret(apiKeyId);
-    const models = await listProviderModels(record.provider, apiKey);
+    const models = redactModels(await listProviderModels(record.provider, apiKey));
     return {
       apiKeyId,
       provider: record.provider,
@@ -1017,11 +1021,18 @@ function runTaskSheetScheduledJob(job: ScheduledJobRecord): ScheduledJobExecutio
   };
 }
 
-async function getLatestApiKeyForProvider(provider: ApiCallProvider): Promise<string | null> {
+async function getLatestApiKeyForProvider(provider: ApiCallProvider, model?: string): Promise<string | null> {
   if (provider === "mock") {
     return null;
   }
-  const key = getConfigDb().listApiKeys().find((candidate) => candidate.provider === provider);
+  const candidates = getConfigDb().listApiKeys().filter((candidate) => candidate.provider === provider);
+  const key =
+    (model
+      ? candidates.find((candidate) => candidate.model === model && candidate.isDefault) ??
+        candidates.find((candidate) => candidate.model === model)
+      : null) ??
+    candidates.find((candidate) => candidate.isDefault) ??
+    candidates[0];
   if (!key) {
     return null;
   }
@@ -1096,7 +1107,7 @@ async function runSingleLlmProvider(input: {
   workflow: Extract<ApiCallWorkflow, "skill_test" | "image_prompt_workspace">;
   db: WorkspaceDatabase;
 }): Promise<ChatCompletionResult> {
-  const apiKey = input.provider === "mock" ? undefined : await getLatestApiKeyForProvider(input.provider);
+  const apiKey = input.provider === "mock" ? undefined : await getLatestApiKeyForProvider(input.provider, input.model);
   const config = getLlmProviderConfig(input.provider);
   const provider = config ? createLlmProviderFromConfig(config, apiKey ?? undefined) : null;
   if (!provider) {
@@ -1157,7 +1168,7 @@ async function runLlmModelsWithProviders(input: {
 > {
 	const rows = await Promise.all(
 		input.models.map(async (model, index) => {
-      const apiKey = model.provider === "mock" ? undefined : await getLatestApiKeyForProvider(model.provider);
+      const apiKey = model.provider === "mock" ? undefined : await getLatestApiKeyForProvider(model.provider, model.model);
       const config = getLlmProviderConfig(model.provider);
 			const provider = config ? createLlmProviderFromConfig(config, apiKey ?? undefined) : null;
 			const columnId = `${model.provider}:${model.model}:${index}`;
@@ -1257,7 +1268,7 @@ async function runLlmModelsWithProvidersStreaming(input: {
 > {
   const rows = await Promise.all(
     input.models.map(async (model, index) => {
-      const apiKey = model.provider === "mock" ? undefined : await getLatestApiKeyForProvider(model.provider);
+      const apiKey = model.provider === "mock" ? undefined : await getLatestApiKeyForProvider(model.provider, model.model);
       const config = getLlmProviderConfig(model.provider);
       const provider = config ? createLlmProviderFromConfig(config, apiKey ?? undefined) : null;
       const columnId = `${model.provider}:${model.model}:${index}`;
@@ -1286,7 +1297,7 @@ async function runLlmModelsWithProvidersStreaming(input: {
           columnId,
           provider: model.provider,
           model: model.model,
-          reason: error.message
+          reason: redactSensitiveText(error.message)
         };
       }
       try {
@@ -1989,7 +2000,7 @@ function registerIpcHandlers(): void {
     if (!provider) {
       throw new Error(`图片 Provider 未配置：${input.model}`);
     }
-    const providerApiKey = provider.id === "mock" ? undefined : await getLatestApiKeyForProvider(provider.id);
+    const providerApiKey = provider.id === "mock" ? undefined : await getLatestApiKeyForProvider(provider.id, input.model);
     const expectedDimensions = getImageDimensions(input.aspectRatio);
     return withActiveWorkspaceDb(async (db) => {
       const prompts = db.listPrompts().filter((prompt) => input.promptIds.includes(prompt.id));

@@ -4,7 +4,7 @@ import type { ScriptWorkspaceColumnResult, ScriptWorkspaceModel, SkillRecord } f
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { mergeConfiguredLlmModels } from "@/lib/provider-options";
+import { configuredLlmModelsFromApiKeys } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 
@@ -13,12 +13,6 @@ interface ModelOption extends ScriptWorkspaceModel {
 }
 
 const defaultModels: ModelOption[] = [
-  { provider: "mock", model: "mock-script-fast", enabled: true },
-  { provider: "mock", model: "mock-script-balanced", enabled: true },
-  { provider: "mock", model: "mock-fail", enabled: false },
-  { provider: "openai", model: "gpt-5.4-mini", enabled: false },
-  { provider: "anthropic", model: "claude-sonnet-4-5", enabled: false },
-  { provider: "google", model: "gemini-2.5-flash", enabled: false }
 ];
 
 export function ScriptWorkspacePage(): JSX.Element {
@@ -61,10 +55,9 @@ export function ScriptWorkspacePage(): JSX.Element {
   }, [workspace?.id]);
 
   useEffect(() => {
-    window.roster
-      .getSettings()
-      .then((loaded) => {
-        setModels((current) => mergeConfiguredLlmModels(current, loaded) as ModelOption[]);
+    Promise.all([window.roster.getSettings(), window.roster.listApiKeys()])
+      .then(([loaded, apiKeys]) => {
+        setModels(configuredLlmModelsFromApiKeys(loaded, apiKeys, { enableFirst: true }) as ModelOption[]);
       })
       .catch(() => undefined);
   }, []);
@@ -247,7 +240,7 @@ export function ScriptWorkspacePage(): JSX.Element {
 
   function toggleModel(modelName: string): void {
     setModels((current) =>
-      current.map((model) => (model.model === modelName ? { ...model, enabled: !model.enabled } : model))
+      current.map((model) => (`${model.provider}:${model.model}` === modelName ? { ...model, enabled: !model.enabled } : model))
     );
   }
 
@@ -314,21 +307,25 @@ export function ScriptWorkspacePage(): JSX.Element {
       </section>
 
       <section className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           {models.map((model) => (
             <button
-              key={model.model}
+              key={`${model.provider}:${model.model}`}
               className={cn(
-                "rounded-md border px-3 py-1.5 text-xs",
+                "max-w-64 rounded-md border px-3 py-1.5 text-xs",
                 model.enabled ? "border-blue-200 bg-blue-50 text-blue-700" : "border-border text-muted-foreground"
               )}
-              onClick={() => toggleModel(model.model)}
+              onClick={() => toggleModel(`${model.provider}:${model.model}`)}
               type="button"
+              title={`${model.provider}/${model.model}`}
               data-script-model={`${model.provider}:${model.model}`}
             >
-              {model.provider}/{model.model}
+              <span className="block truncate">{model.provider}/{model.model}</span>
             </button>
           ))}
+          {models.length === 0 ? (
+            <span className="text-sm text-muted-foreground">请先到设置页保存可用的文本模型 API key。</span>
+          ) : null}
         </div>
         <Button variant="outline" onClick={saveSelected} data-save-selected-scripts>
           <Save />

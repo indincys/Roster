@@ -8,6 +8,7 @@ import {
   AppSettingsSaveInputSchema,
   AppSettingsSchema,
   ImageSubdirectories,
+  sanitizeLlmProviderConfigs,
   SkillActivationConfigSchema,
   SkillActivationUpdateInputSchema,
   SkillContentRequestSchema,
@@ -80,6 +81,8 @@ interface ApiKeyRow {
   id: string;
   provider: string;
   label: string;
+  model: string | null;
+  is_default: number;
   created_at: string;
   updated_at: string;
 }
@@ -159,6 +162,8 @@ function mapApiKeyRow(row: ApiKeyRow): ApiKeyPublicRecord {
     id: row.id,
     provider: ApiKeySaveInputSchema.shape.provider.parse(row.provider),
     label: row.label,
+    model: row.model,
+    isDefault: row.is_default === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -262,6 +267,8 @@ function coerceApiKeyRow(row: Record<string, unknown>): ApiKeyRow {
     id: rowString(row, "id"),
     provider: rowString(row, "provider"),
     label: rowString(row, "label"),
+    model: rowOptionalString(row, "model"),
+    is_default: rowNumber(row, "is_default"),
     created_at: rowString(row, "created_at"),
     updated_at: rowString(row, "updated_at")
   };
@@ -405,7 +412,7 @@ export class ConfigDatabase {
 
   listApiKeys(): ApiKeyPublicRecord[] {
     const rows = this.db
-      .prepare("SELECT id, provider, label, created_at, updated_at FROM api_keys ORDER BY updated_at DESC")
+      .prepare("SELECT id, provider, label, model, is_default, created_at, updated_at FROM api_keys ORDER BY updated_at DESC")
       .all();
     return rows.map((row) => mapApiKeyRow(coerceApiKeyRow(row)));
   }
@@ -432,17 +439,26 @@ export class ConfigDatabase {
     const timestamp = nowIso();
     const id = crypto.randomUUID();
     const encrypted = await encryptSecret(path.join(this.userDataPath, "vault"), parsed.apiKey);
+    const model = parsed.model?.trim() || null;
+    const existingForProvider = this.listApiKeys().filter((key) => key.provider === parsed.provider);
+    const shouldSetDefault = parsed.isDefault || existingForProvider.length === 0;
+
+    if (shouldSetDefault) {
+      this.db.prepare("UPDATE api_keys SET is_default = 0, updated_at = ? WHERE provider = ?").run(timestamp, parsed.provider);
+    }
 
     this.db
       .prepare(
         `INSERT INTO api_keys (
-          id, provider, label, ciphertext, iv, auth_tag, fingerprint, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          id, provider, label, model, is_default, ciphertext, iv, auth_tag, fingerprint, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
         parsed.provider,
         parsed.label,
+        model,
+        shouldSetDefault ? 1 : 0,
         encrypted.ciphertext,
         encrypted.iv,
         encrypted.authTag,
@@ -455,6 +471,8 @@ export class ConfigDatabase {
       id,
       provider: parsed.provider,
       label: parsed.label,
+      model,
+      isDefault: shouldSetDefault,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -473,12 +491,24 @@ export class ConfigDatabase {
   getSettings(): AppSettings {
     const raw = this.getPreference("appSettings");
     if (!raw) {
-      return AppSettingsSchema.parse({});
+      const defaults = AppSettingsSchema.parse({});
+      return {
+        ...defaults,
+        llmProviderConfigs: sanitizeLlmProviderConfigs(defaults.llmProviderConfigs)
+      };
     }
     try {
-      return AppSettingsSchema.parse(JSON.parse(raw));
+      const parsed = AppSettingsSchema.parse(JSON.parse(raw));
+      return {
+        ...parsed,
+        llmProviderConfigs: sanitizeLlmProviderConfigs(parsed.llmProviderConfigs)
+      };
     } catch {
-      return AppSettingsSchema.parse({});
+      const defaults = AppSettingsSchema.parse({});
+      return {
+        ...defaults,
+        llmProviderConfigs: sanitizeLlmProviderConfigs(defaults.llmProviderConfigs)
+      };
     }
   }
 
@@ -488,8 +518,12 @@ export class ConfigDatabase {
       ...this.getSettings(),
       ...parsed
     });
-    this.setPreference("appSettings", JSON.stringify(next));
-    return next;
+    const sanitized = {
+      ...next,
+      llmProviderConfigs: sanitizeLlmProviderConfigs(next.llmProviderConfigs)
+    };
+    this.setPreference("appSettings", JSON.stringify(sanitized));
+    return sanitized;
   }
 
   async listSkills(): Promise<SkillRecord[]> {

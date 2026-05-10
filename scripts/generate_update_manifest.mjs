@@ -51,7 +51,7 @@ function inferArtifactKind(fileName) {
 }
 
 function inferPlatform(fileName) {
-  if (fileName.includes("-mac") || fileName.endsWith(".dmg")) {
+  if (fileName.includes("-mac") || fileName.endsWith(".dmg") || (fileName.endsWith(".zip") && fileName.includes("arm64"))) {
     return "darwin";
   }
   if (fileName.endsWith(".exe")) {

@@ -14,7 +14,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { mergeConfiguredLlmModels } from "@/lib/provider-options";
+import { configuredLlmModelsFromApiKeys } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 
@@ -50,11 +50,8 @@ interface SkillForm {
 }
 
 const defaultSkillTestModelPresets: SkillTestModel[] = [
-  { provider: "mock", model: "mock-skill-test" },
-  { provider: "openai", model: "gpt-5.4-mini" },
-  { provider: "anthropic", model: "claude-sonnet-4.5" },
-  { provider: "google", model: "gemini-2.5-flash" }
 ];
+const emptySkillTestModel: SkillTestModel = { provider: "mock", model: "" };
 
 const emptyForm: SkillForm = {
   skillId: "",
@@ -131,7 +128,7 @@ export function SkillCenterPage(): JSX.Element {
   const [activeFileContent, setActiveFileContent] = useState("");
   const [testPrompt, setTestPrompt] = useState("请用当前 Skill 生成一段测试输出。");
   const [skillTestModelPresets, setSkillTestModelPresets] = useState<SkillTestModel[]>(defaultSkillTestModelPresets);
-  const [testModel, setTestModel] = useState<SkillTestModel>(defaultSkillTestModelPresets[0]);
+  const [testModel, setTestModel] = useState<SkillTestModel>(defaultSkillTestModelPresets[0] ?? emptySkillTestModel);
   const [testResult, setTestResult] = useState<SkillTestResult | null>(null);
   const [message, setMessage] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -170,9 +167,14 @@ export function SkillCenterPage(): JSX.Element {
   }, [workspace?.id]);
 
   useEffect(() => {
-    window.roster
-      .getSettings()
-      .then((loaded) => setSkillTestModelPresets(mergeConfiguredLlmModels(defaultSkillTestModelPresets, loaded)))
+    Promise.all([window.roster.getSettings(), window.roster.listApiKeys()])
+      .then(([loaded, apiKeys]) => {
+        const options = configuredLlmModelsFromApiKeys(loaded, apiKeys, { enableFirst: true });
+        setSkillTestModelPresets(options);
+        if (options[0]) {
+          setTestModel({ provider: options[0].provider, model: options[0].model });
+        }
+      })
       .catch(() => undefined);
   }, []);
 
@@ -609,6 +611,7 @@ export function SkillCenterPage(): JSX.Element {
                       <select
                         className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none"
                         value={`${testModel.provider}:${testModel.model}`}
+                        disabled={skillTestModelPresets.length === 0}
                         onChange={(event) => {
                           const [provider, model] = event.target.value.split(":");
                           const preset = skillTestModelPresets.find(
@@ -620,6 +623,7 @@ export function SkillCenterPage(): JSX.Element {
                         }}
                         data-skill-test-model
                       >
+                        {skillTestModelPresets.length === 0 ? <option value="">请先到设置页保存文本模型 API key</option> : null}
                         {skillTestModelPresets.map((preset) => (
                           <option key={`${preset.provider}:${preset.model}`} value={`${preset.provider}:${preset.model}`}>
                             {preset.provider} / {preset.model}
@@ -631,7 +635,7 @@ export function SkillCenterPage(): JSX.Element {
                       variant="outline"
                       size="sm"
                       onClick={() => void runSkillTest()}
-                      disabled={!selected || testing || !testPrompt.trim()}
+                      disabled={!selected || testing || !testPrompt.trim() || skillTestModelPresets.length === 0}
                       data-run-skill-test
                     >
                       <TestTube2 />

@@ -209,9 +209,15 @@ Windows 真实桌面验收：
 
 - 局域网内 Windows 10/11 x64 机器作为长期 Windows runner。
 - Windows 机器应启用 OpenSSH Server，`sshd` 设为 Automatic，并通过 Windows 防火墙放行 TCP 22。
-- Mac 端使用专用 SSH key `~/.ssh/roster_windows_ed25519` 登录 Windows，不在聊天中传递 Windows 密码。
+- 当前已验证 Windows runner：用户 `indin`，主机 `INDINCYSWINDOWS` / `indincysWindows`，局域网 IP `192.168.31.46`。
+- Mac 端已建立全局 Windows 开发通道，优先使用通用 SSH alias `windows` / `win` / `windows-dev` 登录 Windows；`roster-windows` 仅作为兼容别名保留。
+- Mac 端专用 SSH key 为 `~/.ssh/windows_dev_ed25519`，旧 key `~/.ssh/roster_windows_ed25519` 仅作兼容备份；不在聊天中传递 Windows 密码。
+- 推荐连接命令：`ssh windows "cmd /c \"whoami && hostname && echo %CD%\""`。
+- Mac 端通用辅助命令：`win` 打开/执行 SSH 命令，`wincmd` 执行 `cmd.exe /c` 命令，`winps` 执行 PowerShell 命令，`wincp` 上传文件到 Windows，`winaddr` 查询当前局域网 IP。
 - Windows 用户的 `authorized_keys` 中应包含 Mac 端公钥 `roster-windows-ssh`。
-- 后续 Windows 构建、打包、命令行测试和日志收集优先通过 Mac -> Windows SSH 执行。
+- Windows 通用开发目录为 `C:\Users\indin\Dev`；后续 Windows 构建、打包、命令行测试和日志收集优先通过 Mac -> Windows SSH 执行。
+- 已验证 Windows 工具链：Git、GitHub CLI、ripgrep、Node.js LTS、npm。
+- UU 远程虚拟地址 `198.18.0.1` 可作为屏幕控制通道参考，但当前 Mac -> Windows SSH 已验证使用局域网地址 `192.168.31.46`。
 - 真实桌面窗口、安装器交互、SmartScreen 提示、Electron UI 验收可通过用户已授权的 UU 远程控制窗口操作。
 - 通过 UU 远程修改远程访问、防火墙、账号或安全策略前，必须有用户明确授权；当前用户已授权启用持久化 SSH 并配置防火墙，用于本项目 Windows 测试和 debug。
 - Windows 验收结果必须记录实际 Windows 用户、主机名、局域网 IP、命令和产物路径。
@@ -264,6 +270,17 @@ npm run release:verify:strict
 
 当前发布任务按 `PLAN.md` 的 `Remaining Release Tasks` 执行。
 
+当前已完成的发布外部项：
+
+- `indincys/Roster` 为 public GitHub 仓库，Release 资产可无需客户端 token 访问。
+- macOS codesigning identity `YourApp Self-Signed` 已在本机钥匙串中可用。
+- 加密 `.p12` 备份位于仓库外 `~/.roster/release/YourApp-Self-Signed.p12`，密码保存在本机钥匙串条目 `Roster YourApp Self-Signed p12 password`。
+- GitHub Actions secrets `CSC_LINK` 和 `CSC_KEY_PASSWORD` 已配置。
+- macOS signed artifacts、Windows unsigned x64 NSIS artifacts、`latest-mac.yml`、`latest.yml`、`latest.json` 已生成并通过普通 release verifier。
+- ffmpeg/ffprobe redistributable binaries 已按平台随包，来源和 license review 见 `tools/ffmpeg/README.md`。
+
+当前唯一剩余 release blocker 是真实 API key + 网络环境下的 live paid-provider success 验收。
+
 ## Implementation Discipline
 
 - 保持变更聚焦。
@@ -279,9 +296,6 @@ npm run release:verify:strict
 
 遇到以下条件时停止并报告阻塞项：
 
-- 缺少 macOS 自签名证书 `YourApp Self-Signed`、`.p12` 加密备份或 CI 注入变量。
-- 缺少 Windows 构建或真实 Windows 桌面验收环境。
-- 缺少已完成 license review 的 ffmpeg/ffprobe redistributable binaries。
 - 缺少真实 API key 或网络验收条件。
 - 需要用户决定未定义产品策略。
 - 文档冲突且无法按 source-of-truth 优先级解决。

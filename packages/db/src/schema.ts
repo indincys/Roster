@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 `;
 
+export const CONFIG_API_KEY_MODEL_METADATA_SQL = `
+ALTER TABLE api_keys ADD COLUMN model TEXT;
+ALTER TABLE api_keys ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_provider_model ON api_keys(provider, model);
+CREATE INDEX IF NOT EXISTS idx_api_keys_provider_default ON api_keys(provider, is_default);
+`;
+
 export const WORKSPACE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   id TEXT PRIMARY KEY,
@@ -406,6 +414,10 @@ export const CONFIG_MIGRATIONS: SqlMigration[] = [
   {
     id: "0001_config_schema",
     sql: CONFIG_SCHEMA_SQL
+  },
+  {
+    id: "0002_api_key_model_metadata",
+    sql: CONFIG_API_KEY_MODEL_METADATA_SQL
   }
 ];
 

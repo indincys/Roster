@@ -4,7 +4,7 @@ import type { SkillRecord, TitleWorkspaceColumnResult, TitleWorkspaceModel } fro
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { mergeConfiguredLlmModels } from "@/lib/provider-options";
+import { configuredLlmModelsFromApiKeys } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 
@@ -13,12 +13,6 @@ interface ModelOption extends TitleWorkspaceModel {
 }
 
 const defaultModels: ModelOption[] = [
-  { provider: "mock", model: "mock-title-fast", enabled: true },
-  { provider: "mock", model: "mock-title-balanced", enabled: true },
-  { provider: "mock", model: "mock-fail", enabled: false },
-  { provider: "openai", model: "gpt-5.4-mini", enabled: false },
-  { provider: "anthropic", model: "claude-sonnet-4-5", enabled: false },
-  { provider: "google", model: "gemini-2.5-flash", enabled: false }
 ];
 
 export function TitleWorkspacePage(): JSX.Element {
@@ -31,6 +25,8 @@ export function TitleWorkspacePage(): JSX.Element {
   const [models, setModels] = useState<ModelOption[]>(defaultModels);
   const [columns, setColumns] = useState<TitleWorkspaceColumnResult[]>([]);
   const [selectedTitles, setSelectedTitles] = useState<Set<string>>(new Set());
+  const [showScoreDialog, setShowScoreDialog] = useState(false);
+  const [scoreDraft, setScoreDraft] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeStreamId, setActiveStreamId] = useState<string | null>(null);
@@ -61,10 +57,9 @@ export function TitleWorkspacePage(): JSX.Element {
   }, [workspace?.id]);
 
   useEffect(() => {
-    window.roster
-      .getSettings()
-      .then((loaded) => {
-        setModels((current) => mergeConfiguredLlmModels(current, loaded) as ModelOption[]);
+    Promise.all([window.roster.getSettings(), window.roster.listApiKeys()])
+      .then(([loaded, apiKeys]) => {
+        setModels(configuredLlmModelsFromApiKeys(loaded, apiKeys, { enableFirst: true }) as ModelOption[]);
       })
       .catch(() => undefined);
   }, []);
@@ -193,11 +188,24 @@ export function TitleWorkspacePage(): JSX.Element {
       setMessage("请先勾选要入库的标题");
       return;
     }
+    setScoreDraft("");
+    setShowScoreDialog(true);
+  }
+
+  async function confirmSaveSelected(): Promise<void> {
+    if (!selectedSkillId || selectedTitles.size === 0) {
+      setShowScoreDialog(false);
+      setMessage("请先勾选要入库的标题");
+      return;
+    }
+    const parsedScore = scoreDraft.trim() ? Number.parseInt(scoreDraft, 10) : null;
     const result = await window.roster.saveTitleWorkspaceSelection({
       skillId: selectedSkillId,
       titles: [...selectedTitles],
-      score: null
+      score: Number.isFinite(parsedScore) ? parsedScore : null
     });
+    setShowScoreDialog(false);
+    setSelectedTitles(new Set());
     setMessage(`已入库 ${result.savedCount} 条标题`);
   }
 
@@ -228,7 +236,7 @@ export function TitleWorkspacePage(): JSX.Element {
 
   function toggleModel(modelName: string): void {
     setModels((current) =>
-      current.map((model) => (model.model === modelName ? { ...model, enabled: !model.enabled } : model))
+      current.map((model) => (`${model.provider}:${model.model}` === modelName ? { ...model, enabled: !model.enabled } : model))
     );
   }
 
@@ -295,21 +303,25 @@ export function TitleWorkspacePage(): JSX.Element {
       </section>
 
       <section className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           {models.map((model) => (
             <button
-              key={model.model}
+              key={`${model.provider}:${model.model}`}
               className={cn(
-                "rounded-md border px-3 py-1.5 text-xs",
+                "max-w-64 rounded-md border px-3 py-1.5 text-xs",
                 model.enabled ? "border-blue-200 bg-blue-50 text-blue-700" : "border-border text-muted-foreground"
               )}
-              onClick={() => toggleModel(model.model)}
+              onClick={() => toggleModel(`${model.provider}:${model.model}`)}
               type="button"
+              title={`${model.provider}/${model.model}`}
               data-title-model={`${model.provider}:${model.model}`}
             >
-              {model.provider}/{model.model}
+              <span className="block truncate">{model.provider}/{model.model}</span>
             </button>
           ))}
+          {models.length === 0 ? (
+            <span className="text-sm text-muted-foreground">请先到设置页保存可用的文本模型 API key。</span>
+          ) : null}
         </div>
         <Button variant="outline" onClick={saveSelected} data-save-selected-titles>
           <Save />
@@ -378,6 +390,36 @@ export function TitleWorkspacePage(): JSX.Element {
       </div>
 
       {message ? <div className="rounded-md border border-border bg-card px-4 py-3 text-sm" data-title-workspace-message>{message}</div> : null}
+      {showScoreDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" data-title-score-dialog>
+          <div className="w-[360px] rounded-lg border border-border bg-card p-4 shadow-lg">
+            <div className="text-sm font-semibold">入标题库</div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              将选中的 {selectedTitles.size} 条标题写入标题库。爆款分数可留空，或填写 1-10。
+            </p>
+            <Input
+              className="mt-3"
+              label="爆款分数"
+              type="number"
+              min={1}
+              max={10}
+              value={scoreDraft}
+              onChange={(event) => setScoreDraft(event.target.value)}
+              placeholder="待评估"
+              data-title-score-input
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowScoreDialog(false)} data-cancel-save-selected-titles>
+                取消
+              </Button>
+              <Button variant="primary" onClick={() => void confirmSaveSelected()} data-confirm-save-selected-titles>
+                <Save />
+                入库
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="hidden" data-generated-title-count={allTitles.length} />
     </div>
   );

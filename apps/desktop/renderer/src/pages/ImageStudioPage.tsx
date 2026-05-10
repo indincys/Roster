@@ -12,7 +12,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { mergeConfiguredLabeledLlmModels } from "@/lib/provider-options";
+import { configuredLabeledLlmModelsFromApiKeys } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 
 type ImageStudioTab = "prompt" | "library" | "generate";
@@ -23,11 +23,8 @@ const imageModelOptions = [
   { label: "OpenAI GPT Image", value: "gpt-image-1.5" }
 ] as const;
 const defaultTextModelOptions: Array<ImagePromptWorkspaceModel & { label: string }> = [
-  { label: "Mock 文本", provider: "mock", model: "mock-title-fast" },
-  { label: "OpenAI GPT", provider: "openai", model: "gpt-5.4-mini" },
-  { label: "Anthropic Claude", provider: "anthropic", model: "claude-sonnet-4-5" },
-  { label: "Google Gemini", provider: "google", model: "gemini-2.5-flash" }
 ];
+const emptyPromptModel: ImagePromptWorkspaceModel = { provider: "mock", model: "" };
 
 interface ImageGenerationProgress {
   status: "idle" | "running" | "completed" | "failed";
@@ -90,7 +87,7 @@ export function ImageStudioPage(): JSX.Element {
   const [promptSkills, setPromptSkills] = useState<SkillRecord[]>([]);
   const [selectedPromptSkillId, setSelectedPromptSkillId] = useState("");
   const [textModelOptions, setTextModelOptions] = useState<Array<ImagePromptWorkspaceModel & { label: string }>>(defaultTextModelOptions);
-  const [promptModel, setPromptModel] = useState<ImagePromptWorkspaceModel>(defaultTextModelOptions[0]);
+  const [promptModel, setPromptModel] = useState<ImagePromptWorkspaceModel>(defaultTextModelOptions[0] ?? emptyPromptModel);
   const [newSceneName, setNewSceneName] = useState("");
   const [draftPrompts, setDraftPrompts] = useState<string[]>([]);
   const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(new Set());
@@ -133,9 +130,14 @@ export function ImageStudioPage(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    window.roster
-      .getSettings()
-      .then((loaded) => setTextModelOptions(mergeConfiguredLabeledLlmModels(defaultTextModelOptions, loaded)))
+    Promise.all([window.roster.getSettings(), window.roster.listApiKeys()])
+      .then(([loaded, apiKeys]) => {
+        const options = configuredLabeledLlmModelsFromApiKeys(loaded, apiKeys, { enableFirst: true });
+        setTextModelOptions(options);
+        if (options[0]) {
+          setPromptModel({ provider: options[0].provider, model: options[0].model });
+        }
+      })
       .catch(() => undefined);
   }, []);
 
@@ -493,6 +495,7 @@ export function ImageStudioPage(): JSX.Element {
               <select
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
                 value={`${promptModel.provider}:${promptModel.model}`}
+                disabled={textModelOptions.length === 0}
                 onChange={(event) => {
                   const selected = textModelOptions.find((option) => `${option.provider}:${option.model}` === event.target.value);
                   if (selected) {
@@ -501,6 +504,7 @@ export function ImageStudioPage(): JSX.Element {
                 }}
                 data-image-prompt-model
               >
+                {textModelOptions.length === 0 ? <option value="">请先到设置页保存文本模型 API key</option> : null}
                 {textModelOptions.map((model) => (
                   <option key={`${model.provider}:${model.model}`} value={`${model.provider}:${model.model}`}>
                     {model.label}

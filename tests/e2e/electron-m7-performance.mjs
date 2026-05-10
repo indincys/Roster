@@ -10,7 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
-const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
+const electronBin = resolveElectronBinary();
 const appRoot = path.join(repoRoot, "apps", "desktop");
 const mainEntry = path.join(appRoot, "out", "main", "index.js");
 const rendererEntry = path.join(appRoot, "out", "renderer", "index.html");
@@ -26,6 +26,16 @@ const thresholds = {
   visibleRowsMax: 120
 };
 const rendererConsole = [];
+
+function resolveElectronBinary() {
+  if (process.platform === "win32") {
+    const executablePath = path.join(repoRoot, "node_modules", "electron", "dist", "electron.exe");
+    if (existsSync(executablePath)) {
+      return executablePath;
+    }
+  }
+  return path.join(repoRoot, "node_modules", ".bin", "electron");
+}
 
 function assert(condition, message) {
   if (!condition) {

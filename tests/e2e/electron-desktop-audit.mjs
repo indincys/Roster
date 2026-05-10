@@ -16,7 +16,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
-const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
+const electronBin = resolveElectronBinary();
 const appRoot = path.join(repoRoot, "apps", "desktop");
 const mainEntry = path.join(appRoot, "out", "main", "index.js");
 const rendererEntry = path.join(appRoot, "out", "renderer", "index.html");
@@ -29,9 +29,20 @@ const marketManifestUrl = pathToFileURL(path.join(marketRepoRoot, "manifest.json
 const updateManifestPath = path.join(auditRoot, "update-manifest.json");
 const updateManifestUrl = pathToFileURL(updateManifestPath).toString();
 const devtoolsPort = 9339 + Math.floor(Math.random() * 1000);
+const minimumVisibleWindowWidth = process.platform === "win32" ? 1024 : 1120;
 const failures = [];
 const rendererConsole = [];
 let sheetDate = "";
+
+function resolveElectronBinary() {
+  if (process.platform === "win32") {
+    const executablePath = path.join(repoRoot, "node_modules", "electron", "dist", "electron.exe");
+    if (existsSync(executablePath)) {
+      return executablePath;
+    }
+  }
+  return path.join(repoRoot, "node_modules", ".bin", "electron");
+}
 
 function assert(condition, message) {
   if (!condition) {
@@ -343,7 +354,10 @@ async function main() {
       })`
     );
     assert(electronWindowMetrics.visibilityState === "visible", `Electron window is not visible: ${electronWindowMetrics.visibilityState}`);
-    assert(electronWindowMetrics.outerWidth >= 1120, `Electron window width invalid: ${electronWindowMetrics.outerWidth}`);
+    assert(
+      electronWindowMetrics.outerWidth >= minimumVisibleWindowWidth,
+      `Electron window width invalid: ${electronWindowMetrics.outerWidth}`
+    );
     assert(electronWindowMetrics.outerHeight >= 720, `Electron window height invalid: ${electronWindowMetrics.outerHeight}`);
 
     await evaluate(
@@ -587,6 +601,100 @@ async function main() {
     assert(
       activationJson.enabledSkillIds.includes("electron-title-skill"),
       "Skill activation file did not include UI-enabled Skill"
+    );
+
+    await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'settings' })");
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-save-api-key]') !== null`),
+      "settings API key form visible before AI workflow audit",
+      10_000
+    );
+    await evaluate(
+      client,
+      `(() => {
+        const setInput = (selector, value) => {
+          const input = document.querySelector(selector);
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+          setter.call(input, value);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        setInput('[data-model-vendor]', 'Mock 本地测试');
+        setInput('[data-model-id]', 'mock-title-fast');
+        setInput('[data-provider-config-base-url]', '');
+        setInput('[data-api-key-value]', 'mock-provider-key-title');
+        document.querySelector('[data-save-api-key]').click();
+      })()`
+    );
+    await waitFor(
+      () => evaluate(client, `document.body.innerText.includes("API 已保存，连接测试成功") && document.body.innerText.includes("mock-title-fast")`),
+      "mock title API key saved before AI workflow audit",
+      10_000
+    );
+    await evaluate(
+      client,
+      `(() => {
+        const setInput = (selector, value) => {
+          const input = document.querySelector(selector);
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+          setter.call(input, value);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        setInput('[data-model-vendor]', 'Mock 本地测试');
+        setInput('[data-model-id]', 'mock-title-balanced');
+        setInput('[data-api-key-value]', 'mock-provider-key-balanced');
+        document.querySelector('[data-save-api-key]').click();
+      })()`
+    );
+    await waitFor(
+      () => evaluate(client, `document.body.innerText.includes("API 已保存，连接测试成功") && document.body.innerText.includes("mock-title-balanced")`),
+      "second mock API key saved before AI workflow audit",
+      10_000
+    );
+    await evaluate(
+      client,
+      `(() => {
+        const setInput = (selector, value) => {
+          const input = document.querySelector(selector);
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+          setter.call(input, value);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        setInput('[data-model-vendor]', 'Mock 本地测试');
+        setInput('[data-model-id]', 'mock-script-fast');
+        setInput('[data-api-key-value]', 'mock-provider-key-script-fast');
+        document.querySelector('[data-save-api-key]').click();
+      })()`
+    );
+    await waitFor(
+      () => evaluate(client, `document.body.innerText.includes("API 已保存，连接测试成功") && document.body.innerText.includes("mock-script-fast")`),
+      "mock script API key saved before AI workflow audit",
+      10_000
+    );
+    await evaluate(
+      client,
+      `(() => {
+        const setInput = (selector, value) => {
+          const input = document.querySelector(selector);
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+          setter.call(input, value);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        setInput('[data-model-vendor]', 'Mock 本地测试');
+        setInput('[data-model-id]', 'mock-script-balanced');
+        setInput('[data-api-key-value]', 'mock-provider-key-script-balanced');
+        document.querySelector('[data-save-api-key]').click();
+      })()`
+    );
+    await waitFor(
+      () => evaluate(client, `document.body.innerText.includes("API 已保存，连接测试成功") && document.body.innerText.includes("mock-script-balanced")`),
+      "second mock script API key saved before AI workflow audit",
+      10_000
+    );
+    await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'skills' })");
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-skill-center]') !== null`),
+      "Skill Center restored after API key setup",
+      10_000
     );
 
     await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'market' })");
@@ -971,37 +1079,15 @@ async function main() {
         if (fast?.className.includes("bg-blue-50")) fast.click();
         const balanced = document.querySelector('button[data-title-model="mock:mock-title-balanced"]');
         if (balanced?.className.includes("bg-blue-50")) balanced.click();
-        const openai = document.querySelector('button[data-title-model="openai:gpt-5.4-mini"]');
-        if (openai && !openai.className.includes("bg-blue-50")) openai.click();
       })()`
     );
-    await waitFor(
-      () =>
-        evaluate(
-          client,
-          `document.querySelector('button[data-title-model="openai:gpt-5.4-mini"]')?.className.includes("bg-blue-50") === true`
-        ),
-      "title workspace OpenAI model toggled on",
-      10_000
-    );
-    await evaluate(client, `document.querySelector('[data-generate-titles]').click()`);
-    await waitFor(
-      () =>
-        evaluate(
-          client,
-          `(() => {
-            const text = document.querySelector('[data-title-column="gpt-5.4-mini"]')?.innerText ?? "";
-            return text.includes("未配置 openai API key") || text.includes("InvalidAPIKey") || text.includes("失败");
-          })()`
-        ),
-      "title workspace real provider missing-key failure is isolated",
-      10_000
+    assert(
+      !(await evaluate(client, `Boolean(document.querySelector('button[data-title-model="openai:gpt-5.4-mini"]'))`)),
+      "title workspace displayed OpenAI placeholder model without a saved API key"
     );
     await evaluate(
       client,
       `(() => {
-        const openai = document.querySelector('button[data-title-model="openai:gpt-5.4-mini"]');
-        if (openai?.className.includes("bg-blue-50")) openai.click();
         const fast = document.querySelector('button[data-title-model="mock:mock-title-fast"]');
         if (fast && !fast.className.includes("bg-blue-50")) fast.click();
         const balanced = document.querySelector('button[data-title-model="mock:mock-title-balanced"]');
@@ -1033,7 +1119,7 @@ async function main() {
       const providerFailureCount = providerAuditDb
         .prepare("SELECT COUNT(*) AS count FROM api_call_log WHERE provider = 'openai' AND workflow = 'title_workspace' AND status = 'failed' AND error_code = 'InvalidAPIKey'")
         .get().count;
-      assert(providerFailureCount >= 1, "OpenAI missing-key provider failure was not written to api_call_log");
+      assert(providerFailureCount === 0, "title workspace should not call or log unconfigured OpenAI placeholder models");
       const promptLeakCount = providerAuditDb
         .prepare("SELECT COUNT(*) AS count FROM api_call_log WHERE error_message LIKE '%围绕新品卖点%' OR error_message LIKE '%sk-%'")
         .get().count;
@@ -1046,6 +1132,12 @@ async function main() {
       `Array.from(document.querySelectorAll('[data-generated-title]')).slice(0, 3).forEach((button) => button.click())`
     );
     await evaluate(client, `document.querySelector('[data-save-selected-titles]').click()`);
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-title-score-dialog]') !== null`),
+      "title workspace score dialog opens before save",
+      10_000
+    );
+    await evaluate(client, `document.querySelector('[data-confirm-save-selected-titles]').click()`);
     await waitFor(
       () => evaluate(client, `document.body.innerText.includes("已入库 3 条标题")`),
       "title workspace selected titles saved",
@@ -1886,41 +1978,29 @@ async function main() {
     await evaluate(
       client,
       `(() => {
-        const setSelect = (selector, value) => {
-          const select = document.querySelector(selector);
-          const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
-          setter.call(select, value);
-          select.dispatchEvent(new Event("change", { bubbles: true }));
-        };
         const setInput = (selector, value) => {
           const input = document.querySelector(selector);
           const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
           setter.call(input, value);
           input.dispatchEvent(new Event("input", { bubbles: true }));
         };
-        setSelect('[data-api-key-provider]', 'mock');
+        setInput('[data-model-vendor]', 'Mock 本地测试');
+        setInput('[data-model-id]', 'mock-title-fast');
+        setInput('[data-provider-config-base-url]', '');
         setInput('[data-api-key-value]', 'mock-provider-key');
         document.querySelector('[data-save-api-key]').click();
       })()`
     );
     await waitFor(
-      () => evaluate(client, `document.body.innerText.includes("API key 已加密保存") && document.body.innerText.includes("mock")`),
-      "mock API key saved from real settings UI",
+      () => evaluate(client, `document.body.innerText.includes("API 已保存，连接测试成功") && document.body.innerText.includes("mock-title-fast")`),
+      "mock API key saved and tested from real settings UI",
       10_000
     );
     const apiKeysAfterMockSave = await evaluate(client, `window.roster.listApiKeys()`);
-    const mockApiKey = apiKeysAfterMockSave.find((key) => key.provider === "mock");
+    const mockApiKey = apiKeysAfterMockSave.find((key) => key.provider === "mock" && key.model === "mock-title-fast");
     assert(mockApiKey, "mock API key was not saved");
-    await evaluate(client, `document.querySelector('[data-test-api-key="${mockApiKey.id}"]').click()`);
-    await waitFor(
-      () =>
-        evaluate(
-          client,
-          `document.querySelector('[data-api-key-test-result="${mockApiKey.id}"]')?.innerText.includes("连接成功")`
-        ),
-      "mock API key connection test completed from real settings UI",
-      10_000
-    );
+    assert(mockApiKey.label === "Mock 本地测试 / mock-title-fast", "mock API key label should be generated from vendor and model");
+    assert(mockApiKey.model === "mock-title-fast", "mock API key model metadata did not persist");
     const mockApiKeyTest = await evaluate(client, `window.roster.testApiKey({ apiKeyId: ${js(mockApiKey.id)} })`);
     assert(mockApiKeyTest.ok && mockApiKeyTest.models.includes("mock-title-fast"), "mock API key list-models result invalid");
     const missingApiKeyTest = await evaluate(client, `window.roster.testApiKey({ apiKeyId: "missing-api-key" })`);

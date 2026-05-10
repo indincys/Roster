@@ -359,7 +359,7 @@ export class MockLLMProvider implements LLMProvider {
   readonly name = "mock";
 
   async listModels(): Promise<string[]> {
-    return ["mock-title-fast", "mock-title-balanced", "mock-fail"];
+    return ["mock-title-fast", "mock-title-balanced", "mock-script-fast", "mock-script-balanced", "mock-fail"];
   }
 
   async chat(request: ChatRequest): Promise<ChatStream> {

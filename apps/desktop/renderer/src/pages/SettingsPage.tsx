@@ -6,7 +6,6 @@ import type {
   LlmProviderAdapter,
   LlmProviderConfig,
   PlatformAccountRecord,
-  ProviderKind,
   SoftwareUpdateCheckResult,
   WorkspaceCloudSyncCheckResult
 } from "@roster/shared-types";
@@ -29,28 +28,169 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 
+interface SimpleProviderPreset {
+  id: string;
+  label: string;
+  vendor: string;
+  adapter: LlmProviderAdapter;
+  baseUrl: string | null;
+  defaultModel: string;
+}
+
+const SIMPLE_PROVIDER_PRESETS: SimpleProviderPreset[] = [
+  {
+    id: "openai",
+    label: "OpenAI",
+    vendor: "OpenAI",
+    adapter: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    defaultModel: "gpt-5.4-mini"
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    vendor: "Anthropic",
+    adapter: "anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    defaultModel: "claude-sonnet-4-5"
+  },
+  {
+    id: "google",
+    label: "Google Gemini",
+    vendor: "Google Gemini",
+    adapter: "google",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    defaultModel: "gemini-2.5-flash"
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    vendor: "DeepSeek",
+    adapter: "openai-compatible",
+    baseUrl: "https://api.deepseek.com/v1",
+    defaultModel: "deepseek-chat"
+  },
+  {
+    id: "kimi",
+    label: "Kimi",
+    vendor: "Kimi",
+    adapter: "openai-compatible",
+    baseUrl: "https://api.moonshot.cn/v1",
+    defaultModel: "moonshot-v1-8k"
+  },
+  {
+    id: "doubao",
+    label: "Doubao",
+    vendor: "Doubao",
+    adapter: "openai-compatible",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    defaultModel: "doubao-seed-1-6"
+  },
+  {
+    id: "qwen",
+    label: "Qwen",
+    vendor: "Qwen",
+    adapter: "openai-compatible",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    defaultModel: "qwen-plus"
+  },
+  {
+    id: "glm",
+    label: "GLM",
+    vendor: "GLM",
+    adapter: "openai-compatible",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    defaultModel: "glm-4-plus"
+  },
+  {
+    id: "mock",
+    label: "Mock 本地测试",
+    vendor: "Mock 本地测试",
+    adapter: "mock",
+    baseUrl: null,
+    defaultModel: "mock-title-fast"
+  }
+];
+
+function presetForVendor(vendor: string): SimpleProviderPreset | null {
+  const normalized = vendor.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes("deepseek")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "deepseek") ?? null;
+  }
+  if (normalized.includes("kimi") || normalized.includes("moonshot")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "kimi") ?? null;
+  }
+  if (normalized.includes("doubao") || normalized.includes("豆包") || normalized.includes("volcano") || normalized.includes("火山")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "doubao") ?? null;
+  }
+  if (normalized.includes("qwen") || normalized.includes("通义") || normalized.includes("千问") || normalized.includes("dashscope")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "qwen") ?? null;
+  }
+  if (normalized.includes("glm") || normalized.includes("智谱")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "glm") ?? null;
+  }
+  if (normalized.includes("gemini") || normalized.includes("google")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "google") ?? null;
+  }
+  if (normalized.includes("anthropic") || normalized.includes("claude")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "anthropic") ?? null;
+  }
+  if (normalized.includes("openai")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "openai") ?? null;
+  }
+  if (normalized.includes("mock")) {
+    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "mock") ?? null;
+  }
+  return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.vendor.toLowerCase() === normalized || preset.label.toLowerCase() === normalized) ?? null;
+}
+
+function hashVendor(vendor: string): string {
+  let hash = 0;
+  for (const char of vendor) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function providerIdForVendor(vendor: string): string {
+  const preset = presetForVendor(vendor);
+  if (preset) {
+    return preset.id;
+  }
+  const asciiSlug = vendor
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return asciiSlug || `custom-${hashVendor(vendor)}`;
+}
+
+function adapterForVendor(vendor: string): LlmProviderAdapter {
+  return presetForVendor(vendor)?.adapter ?? "openai-compatible";
+}
+
 export function SettingsPage(): JSX.Element {
   const { bootstrap, updateState, createWorkspace, saveApiKey, checkForUpdates: checkForUpdatesFromStore, loading, error } = useAppStore();
   const workspace = activeWorkspace(bootstrap);
+  const apiKeys = bootstrap?.apiKeys ?? [];
   const workspaceId = workspace?.id;
   const [workspaceName, setWorkspaceName] = useState("");
   const [rootPath, setRootPath] = useState("");
   const [macRootPath, setMacRootPath] = useState("");
   const [winRootPath, setWinRootPath] = useState("");
+  const [modelVendor, setModelVendor] = useState("OpenAI");
+  const [modelId, setModelId] = useState("gpt-5.4-mini");
+  const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
   const [apiKey, setApiKey] = useState("");
-  const [apiProvider, setApiProvider] = useState<ProviderKind>("openai");
-  const [apiLabel, setApiLabel] = useState("默认 OpenAI Key");
-  const [providerDraft, setProviderDraft] = useState<LlmProviderConfig>(() => ({
-    id: "custom-provider",
-    label: "自定义 Provider",
-    vendor: "Custom",
-    adapter: "openai-compatible",
-    baseUrl: "https://api.example.com/v1",
-    defaultModel: "custom-model",
-    enabled: true,
-    isBuiltin: false
-  }));
-  const [apiKeyTestResults, setApiKeyTestResults] = useState<Record<string, ApiKeyConnectionTestResult>>({});
+  const [apiKeyLabel, setApiKeyLabel] = useState("");
+  const [apiKeyDefault, setApiKeyDefault] = useState(true);
+  const [apiConnectionTestResult, setApiConnectionTestResult] = useState<ApiKeyConnectionTestResult | null>(null);
+  const [apiFormHydrated, setApiFormHydrated] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [backupPath, setBackupPath] = useState<string | null>(null);
   const [restorePath, setRestorePath] = useState("");
@@ -102,6 +242,20 @@ export function SettingsPage(): JSX.Element {
     setUpdateCheck(updateState);
   }, [updateState]);
 
+  useEffect(() => {
+    if (apiFormHydrated || !settings) {
+      return;
+    }
+    const firstConfig = settings.llmProviderConfigs.find((config) => config.id !== "mock") ?? settings.llmProviderConfigs[0];
+    if (!firstConfig) {
+      return;
+    }
+    setModelVendor(firstConfig.vendor || firstConfig.label);
+    setModelId(firstConfig.defaultModel);
+    setBaseUrl(firstConfig.baseUrl ?? "");
+    setApiFormHydrated(true);
+  }, [apiFormHydrated, settings]);
+
   const saveSettings = async (input: Partial<AppSettings>): Promise<void> => {
     const saved = await window.roster.saveSettings(input);
     setSettings(saved);
@@ -109,18 +263,14 @@ export function SettingsPage(): JSX.Element {
   };
 
   const providerConfigs = useMemo(() => settings?.llmProviderConfigs ?? [...DEFAULT_LLM_PROVIDER_CONFIGS], [settings?.llmProviderConfigs]);
-  const providerLabels = useMemo(
-    () => new Map(providerConfigs.map((config) => [config.id, config.label])),
-    [providerConfigs]
-  );
-
-  const saveProviderConfigs = async (configs: LlmProviderConfig[], message = "Provider 配置已保存。"): Promise<void> => {
+  const saveProviderConfigs = async (configs: LlmProviderConfig[], message = "Provider 配置已保存。"): Promise<AppSettings> => {
     const saved = await window.roster.saveSettings({ llmProviderConfigs: configs });
     setSettings(saved);
     setSavedMessage(message);
+    return saved;
   };
 
-  const upsertProviderConfig = async (config: LlmProviderConfig): Promise<void> => {
+  const upsertProviderConfig = async (config: LlmProviderConfig, message?: string): Promise<LlmProviderConfig> => {
     const parsed = {
       ...config,
       id: ProviderIdSchema.parse(config.id),
@@ -129,21 +279,8 @@ export function SettingsPage(): JSX.Element {
     const next = [...providerConfigs.filter((candidate) => candidate.id !== parsed.id), parsed].sort((left, right) =>
       left.label.localeCompare(right.label, "zh-Hans-CN")
     );
-    await saveProviderConfigs(next);
-    setApiProvider(parsed.id);
-    setApiLabel(`默认 ${parsed.label} Key`);
-  };
-
-  const toggleProviderConfig = async (providerId: string): Promise<void> => {
-    await saveProviderConfigs(
-      providerConfigs.map((config) => (config.id === providerId ? { ...config, enabled: !config.enabled } : config)),
-      "Provider 启用状态已保存。"
-    );
-  };
-
-  const restoreBuiltinProviders = async (): Promise<void> => {
-    const custom = providerConfigs.filter((config) => !config.isBuiltin);
-    await saveProviderConfigs([...DEFAULT_LLM_PROVIDER_CONFIGS, ...custom], "内置 Provider 已恢复为推荐默认值。");
+    await saveProviderConfigs(next, message);
+    return parsed;
   };
 
   const submitWorkspace = async (event: FormEvent): Promise<void> => {
@@ -161,17 +298,47 @@ export function SettingsPage(): JSX.Element {
     setSavedMessage("工作空间已创建并切换。");
   };
 
-  const submitApiKey = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
-    await saveApiKey({ provider: apiProvider, label: apiLabel, apiKey });
-    setApiKey("");
-    setSavedMessage("API key 已加密保存。");
+  const selectPreset = (vendor: string): void => {
+    const preset = presetForVendor(vendor);
+    if (!preset) {
+      setModelVendor(vendor);
+      setApiConnectionTestResult(null);
+      return;
+    }
+    setModelVendor(preset.vendor);
+    setModelId(preset.defaultModel);
+    setBaseUrl(preset.baseUrl ?? "");
+    setApiConnectionTestResult(null);
   };
 
-  const testApiKey = async (apiKeyId: string): Promise<void> => {
-    const result = await window.roster.testApiKey({ apiKeyId });
-    setApiKeyTestResults((current) => ({ ...current, [apiKeyId]: result }));
-    setSavedMessage(result.ok ? `连接测试成功：读取到 ${result.modelCount} 个模型。` : `连接测试失败：${result.errorCode ?? "ProviderError"}`);
+  const buildProviderConfigFromSimpleForm = (): LlmProviderConfig => {
+    const vendor = modelVendor.trim();
+    const preset = presetForVendor(vendor);
+    const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+    return {
+      id: providerIdForVendor(vendor),
+      label: preset?.label ?? vendor,
+      vendor,
+      adapter: adapterForVendor(vendor),
+      baseUrl: normalizedBaseUrl ? normalizedBaseUrl : null,
+      defaultModel: modelId.trim(),
+      enabled: true,
+      isBuiltin: preset ? DEFAULT_LLM_PROVIDER_CONFIGS.some((config) => config.id === preset.id) : false
+    };
+  };
+
+  const submitApiKey = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    setApiConnectionTestResult(null);
+    const provider = await upsertProviderConfig(buildProviderConfigFromSimpleForm(), "API 配置已保存，正在测试连接。");
+    const model = provider.defaultModel;
+    const label = apiKeyLabel.trim() || `${provider.label} / ${model}`;
+    const savedKey = await saveApiKey({ provider: provider.id, label, model, isDefault: apiKeyDefault, apiKey });
+    const result = await window.roster.testApiKey({ apiKeyId: savedKey.id });
+    setApiConnectionTestResult(result);
+    setApiKey("");
+    setApiKeyLabel("");
+    setSavedMessage(result.ok ? `API 已保存，连接测试成功：读取到 ${result.modelCount} 个模型。` : `API 已保存，连接测试失败：${result.errorCode ?? "ProviderError"}`);
   };
 
   const backupWorkspace = async (): Promise<void> => {
@@ -461,181 +628,122 @@ export function SettingsPage(): JSX.Element {
               <ShieldCheck className="size-4 text-emerald-600" />
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-3 rounded-md border border-border bg-background p-3" data-provider-config-section>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium">模型厂商</div>
-                    <p className="mt-1 text-xs text-muted-foreground">保存 baseURL、模型 ID 和厂商名称；OpenAI-compatible 用于 DeepSeek、Kimi、Doubao、Qwen、GLM 和自定义接口。</p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => void restoreBuiltinProviders()} data-restore-builtin-providers>
-                    <RotateCcw />
-                    恢复内置
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    label="Provider ID"
-                    value={providerDraft.id}
-                    onChange={(event) => setProviderDraft((current) => ({ ...current, id: event.target.value.trim().toLowerCase() }))}
-                    data-provider-config-id
-                  />
-                  <Input
-                    label="厂商显示名"
-                    value={providerDraft.label}
-                    onChange={(event) => setProviderDraft((current) => ({ ...current, label: event.target.value }))}
-                    data-provider-config-label
-                  />
-                  <Input
-                    label="模型厂商"
-                    value={providerDraft.vendor}
-                    onChange={(event) => setProviderDraft((current) => ({ ...current, vendor: event.target.value }))}
-                    data-provider-config-vendor
-                  />
-                  <label className="flex flex-col gap-1.5 text-sm">
-                    <span className="font-medium text-foreground">接口类型</span>
-                    <select
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
-                      value={providerDraft.adapter}
-                      onChange={(event) =>
-                        setProviderDraft((current) => ({ ...current, adapter: event.target.value as LlmProviderAdapter }))
-                      }
-                      data-provider-config-adapter
-                    >
-                      <option value="openai-compatible">OpenAI-compatible</option>
-                      <option value="openai">OpenAI Responses</option>
-                      <option value="anthropic">Anthropic</option>
-                      <option value="google">Google Gemini</option>
-                      <option value="mock">Mock 本地测试</option>
-                    </select>
-                  </label>
-                  <Input
-                    label="baseURL"
-                    value={providerDraft.baseUrl ?? ""}
-                    onChange={(event) => setProviderDraft((current) => ({ ...current, baseUrl: event.target.value || null }))}
-                    placeholder="https://api.example.com/v1"
-                    data-provider-config-base-url
-                  />
-                  <Input
-                    label="默认模型 ID"
-                    value={providerDraft.defaultModel}
-                    onChange={(event) => setProviderDraft((current) => ({ ...current, defaultModel: event.target.value }))}
-                    data-provider-config-model
-                  />
-                </div>
-                <Button
-                  variant="primary"
-                  onClick={() => void upsertProviderConfig(providerDraft)}
-                  disabled={
-                    !providerDraft.id.trim() ||
-                    !providerDraft.label.trim() ||
-                    !providerDraft.vendor.trim() ||
-                    !providerDraft.defaultModel.trim() ||
-                    (providerDraft.adapter === "openai-compatible" && !providerDraft.baseUrl?.trim())
-                  }
-                  data-save-provider-config
-                >
-                  <Plus />
-                  保存 Provider
-                </Button>
-                <div className="flex max-h-48 flex-col gap-2 overflow-auto">
-                  {providerConfigs.map((config) => (
-                    <div
-                      key={config.id}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
-                      data-provider-config-row={config.id}
-                    >
-                      <button
-                        className="min-w-0 text-left"
-                        type="button"
-                        onClick={() => {
-                          setProviderDraft(config);
-                          setApiProvider(config.id);
-                          setApiLabel(`默认 ${config.label} Key`);
-                        }}
-                      >
-                        <div className="truncate font-medium">
-                          {config.label} / {config.defaultModel}
-                        </div>
-                        <div className="truncate font-mono text-xs text-muted-foreground">
-                          {config.id} · {config.adapter} · {config.baseUrl ?? "local"}
-                        </div>
-                      </button>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={config.enabled ? "success" : "warning"}>{config.enabled ? "启用" : "停用"}</Badge>
-                        <Button variant="outline" size="sm" onClick={() => void toggleProviderConfig(config.id)} data-toggle-provider-config={config.id}>
-                          {config.enabled ? "停用" : "启用"}
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <form className="flex flex-col gap-3" onSubmit={(event) => void submitApiKey(event)}>
+              <form className="flex flex-col gap-3" onSubmit={(event) => void submitApiKey(event)} data-api-config-form>
                 <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-foreground">Provider</span>
-                  <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
-                    value={apiProvider}
-                    onChange={(event) => setApiProvider(event.target.value as ProviderKind)}
-                    data-api-key-provider
-                  >
-                    {providerConfigs.map((config) => (
-                      <option key={config.id} value={config.id}>
-                        {config.label} / {config.defaultModel}
-                      </option>
+                  <span className="font-medium text-foreground">大模型厂商</span>
+                  <input
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
+                    list="model-vendor-presets"
+                    value={modelVendor}
+                    onChange={(event) => selectPreset(event.target.value)}
+                    placeholder="OpenAI、DeepSeek、Kimi、豆包、Qwen、GLM、自定义厂商"
+                    data-model-vendor
+                  />
+                  <datalist id="model-vendor-presets">
+                    {SIMPLE_PROVIDER_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.vendor} />
                     ))}
-                  </select>
+                  </datalist>
                 </label>
-                <Input label="凭证标签" value={apiLabel} onChange={(event) => setApiLabel(event.target.value)} />
+                <Input
+                  label="模型 ID"
+                  value={modelId}
+                  onChange={(event) => {
+                    setModelId(event.target.value);
+                    setApiConnectionTestResult(null);
+                  }}
+                  placeholder="gpt-5.4-mini"
+                  data-model-id
+                />
+                <Input
+                  label="Key 名称"
+                  value={apiKeyLabel}
+                  onChange={(event) => setApiKeyLabel(event.target.value)}
+                  placeholder="例如：DeepSeek 主账号 / 备用额度"
+                  data-api-key-label
+                />
+                <Input
+                  label="baseURL"
+                  value={baseUrl}
+                  onChange={(event) => {
+                    setBaseUrl(event.target.value);
+                    setApiConnectionTestResult(null);
+                  }}
+                  placeholder="https://api.example.com/v1"
+                  data-provider-config-base-url
+                />
                 <Input
                   label="API key"
                   type="password"
                   value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
+                  onChange={(event) => {
+                    setApiKey(event.target.value);
+                    setApiConnectionTestResult(null);
+                  }}
                   data-api-key-value
                   hint="保存时使用本机密钥 AES-GCM 加密，不明文写入 config.db。"
                 />
-                <Button variant="primary" type="submit" disabled={apiKey.length < 8} data-save-api-key>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={apiKeyDefault}
+                    onChange={(event) => setApiKeyDefault(event.target.checked)}
+                    data-api-key-default
+                  />
+                  设为该 Provider 默认 Key
+                </label>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={!modelVendor.trim() || !modelId.trim() || !apiKey.trim() || (adapterForVendor(modelVendor) !== "mock" && !baseUrl.trim())}
+                  data-save-api-key
+                  data-test-api-key
+                >
                   <KeyRound />
-                  加密保存
+                  保存并测试 API
                 </Button>
-              </form>
-
-              <div className="flex flex-col gap-2 border-t border-border pt-4">
-                <div className="text-sm font-medium">已保存凭证</div>
-                {bootstrap?.apiKeys.length ? (
-                  bootstrap.apiKeys.map((key) => {
-                    const testResult = apiKeyTestResults[key.id];
-                    return (
-                      <div key={key.id} className="flex flex-col gap-2 rounded-md border border-border px-3 py-2 text-sm" data-api-key-row={key.id}>
-                        <div className="flex items-center justify-between gap-2">
-                          <span>{key.label}</span>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="neutral">{providerLabels.get(key.provider) ?? key.provider}</Badge>
-                            <Button variant="outline" size="sm" onClick={() => void testApiKey(key.id)} data-test-api-key={key.id}>
-                              测试连接
-                            </Button>
-                          </div>
-                        </div>
-                        {testResult ? (
-                          <div className="rounded-md border border-border bg-background p-2 text-xs" data-api-key-test-result={key.id}>
-                            <div className={testResult.ok ? "text-emerald-700" : "text-red-700"}>
-                              {testResult.ok
-                                ? `连接成功，模型 ${testResult.modelCount} 个`
-                                : `连接失败：${testResult.errorCode ?? "ProviderError"}`}
+                {apiConnectionTestResult ? (
+                  <div className="rounded-md border border-border bg-background p-2 text-xs" data-api-key-test-result={apiConnectionTestResult.apiKeyId}>
+                    <div className={apiConnectionTestResult.ok ? "text-emerald-700" : "text-red-700"}>
+                      {apiConnectionTestResult.ok
+                        ? `连接成功，模型 ${apiConnectionTestResult.modelCount} 个`
+                        : `连接失败：${apiConnectionTestResult.errorCode ?? "ProviderError"}`}
+                    </div>
+                    {apiConnectionTestResult.models.length ? (
+                      <div className="mt-1 truncate font-mono text-muted-foreground">{apiConnectionTestResult.models.slice(0, 5).join(" / ")}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="flex flex-col gap-2 rounded-md border border-border bg-background p-3" data-api-key-list>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-foreground">已保存 API key</span>
+                    <Badge variant="neutral">{apiKeys.length} 个</Badge>
+                  </div>
+                  {apiKeys.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+                      暂无凭证；保存后模型才会出现在生成工作区。
+                    </div>
+                  ) : (
+                    <div className="flex max-h-48 flex-col gap-2 overflow-auto">
+                      {apiKeys.map((record) => (
+                        <div
+                          key={record.id}
+                          className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-md border border-border px-3 py-2 text-xs"
+                          data-api-key-row={record.id}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">{record.label}</div>
+                            <div className="truncate font-mono text-muted-foreground">
+                              {record.provider}{record.model ? ` / ${record.model}` : ""}
                             </div>
-                            {testResult.models.length ? (
-                              <div className="mt-1 truncate font-mono text-muted-foreground">{testResult.models.slice(0, 5).join(" / ")}</div>
-                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">暂无凭证</div>
-                )}
-              </div>
+                          <Badge variant={record.isDefault ? "success" : "neutral"}>{record.isDefault ? "默认" : "备用"}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </form>
             </CardContent>
           </Card>
 
