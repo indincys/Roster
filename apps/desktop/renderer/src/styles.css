@@ -2,20 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
+/* pillar — warm clay/red palette ported from design/styles.css (oklch → HSL approximations) */
 :root {
-  --background: 240 6% 97%;
-  --foreground: 240 10% 9%;
+  --background: 45 30% 97%;
+  --bg-soft: 42 25% 94%;
+  --foreground: 30 10% 18%;
+  --foreground-soft: 30 8% 32%;
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 9%;
-  --primary: 221 83% 45%;
+  --card-foreground: 30 10% 18%;
+  --panel-2: 40 20% 96%;
+
+  --primary: 17 60% 60%;
   --primary-foreground: 0 0% 100%;
-  --muted: 240 5% 94%;
-  --muted-foreground: 240 4% 42%;
-  --border: 240 6% 88%;
-  --input: 240 6% 84%;
-  --ring: 221 83% 45%;
-  --destructive: 0 72% 45%;
+  --primary-soft: 28 60% 95%;
+  --primary-strong: 13 65% 50%;
+
+  --muted: 42 25% 94%;
+  --muted-foreground: 40 4% 46%;
+  --muted-foreground-2: 40 3% 62%;
+
+  --border: 42 8% 88%;
+  --border-2: 40 8% 93%;
+  --input: 42 8% 88%;
+  --ring: 13 65% 50%;
+
+  --destructive: 0 65% 55%;
   --destructive-foreground: 0 0% 100%;
+  --destructive-soft: 8 65% 95%;
+
+  --success: 150 40% 42%;
+  --success-soft: 150 30% 93%;
+  --warning: 40 70% 50%;
+  --warning-soft: 48 60% 94%;
+  --info: 220 50% 52%;
+  --info-soft: 220 50% 93%;
+
+  --topbar-h: 48px;
+  --sidebar-w: 232px;
+  --sidebar-w-collapsed: 56px;
+
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
 }
 
 * {
@@ -31,9 +57,11 @@ body,
 body {
   margin: 0;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans", "Microsoft YaHei", system-ui, sans-serif;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button,
@@ -44,5 +72,103 @@ select {
 }
 
 ::selection {
-  background: hsl(var(--primary) / 0.16);
+  background: hsl(var(--primary) / 0.18);
+}
+
+/* ───────── Design-system utility classes (from design/styles.css) ───────── */
+
+.font-mono,
+.mono {
+  font-family: var(--font-mono);
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 3px;
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground-2));
+  display: inline-block;
+  line-height: 1.4;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 500;
+  background: hsl(var(--bg-soft));
+  color: hsl(var(--muted-foreground));
+}
+.status-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: currentColor;
+}
+.status-pill.sp-ok {
+  background: hsl(var(--success-soft));
+  color: hsl(var(--success));
+}
+.status-pill.sp-warn {
+  background: hsl(var(--warning-soft));
+  color: hsl(var(--warning));
+}
+.status-pill.sp-off {
+  background: hsl(var(--bg-soft));
+  color: hsl(var(--muted-foreground-2));
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 99px;
+  background: hsl(var(--panel-2));
+  border: 1px solid hsl(var(--border));
+  font-family: inherit;
+  font-size: 12px;
+  color: hsl(var(--foreground-soft));
+  cursor: pointer;
+}
+.chip:hover {
+  background: hsl(var(--bg-soft));
+}
+.chip.active {
+  background: hsl(var(--foreground));
+  color: hsl(var(--card));
+  border-color: hsl(var(--foreground));
+}
+
+/* skeleton loader animation */
+.sk {
+  background: linear-gradient(90deg, hsl(var(--bg-soft)), hsl(var(--panel-2)), hsl(var(--bg-soft)));
+  background-size: 200% 100%;
+  animation: sk 1.4s linear infinite;
+  border-radius: 4px;
+}
+@keyframes sk {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* sidebar collapse transition */
+.pillar-sidebar {
+  transition: width 0.18s ease;
 }

@@ -1,8 +1,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
+import { installPreviewStub } from "./preview-stub";
 import { useAppStore } from "./stores/app-store";
 import "./styles.css";
+
+installPreviewStub();
 
 if (import.meta.env.DEV || new URLSearchParams(window.location.search).get("e2e") === "1") {
   window.__ROSTER_STORE__ = useAppStore;
