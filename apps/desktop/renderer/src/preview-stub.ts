@@ -14,6 +14,20 @@ export function installPreviewStub(): void {
     return;
   }
 
+  const now = new Date().toISOString();
+  const makeWorkspace = (id: string, name: string, color: string, root: string): BootstrapState["workspace"]["workspaces"][number] => ({
+    id,
+    name,
+    rootPath: root,
+    macRootPath: root,
+    winRootPath: root,
+    color,
+    isDefault: false,
+    isReadOnly: false,
+    lastOpenedAt: now,
+    createdAt: now,
+    updatedAt: now
+  });
   const bootstrap: BootstrapState = {
     appVersion: "preview",
     platform: "darwin",
@@ -21,26 +35,10 @@ export function installPreviewStub(): void {
     workspace: {
       activeWorkspaceId: "ws_warmlife",
       workspaces: [
-        {
-          id: "ws_warmlife",
-          name: "暖心生活 · 主品牌",
-          slug: "warmlife-main",
-          rootPath: "/preview/暖心生活",
-          color: "#D97757",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: "ws_pillar",
-          name: "pillar 设计 · 配饰线",
-          slug: "pillar-accessory",
-          rootPath: "/preview/pillar",
-          color: "#7A5AE0",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
+        makeWorkspace("ws_warmlife", "暖心生活 · 主品牌", "#D97757", "/preview/warmlife"),
+        makeWorkspace("ws_pillar", "pillar 设计 · 配饰线", "#7A5AE0", "/preview/pillar")
       ]
-    } as BootstrapState["workspace"],
+    },
     apiKeys: []
   };
 
