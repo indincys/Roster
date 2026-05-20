@@ -14,3 +14,4 @@ apps/desktop/dist/
 apps/desktop/release/
 apps/desktop/out/
 apps/desktop/dist-types/
+.claude/worktrees/
