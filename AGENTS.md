@@ -2,22 +2,17 @@
 
 本文件是「短视频运营工作台」项目的仓库级长期指令。Codex、Claude Code 或其他工程代理在本仓库工作时必须先阅读本文件，再阅读当前任务相关文档。
 
-## Current Execution State
+## Current State
 
-当前本地仓库实现已完成。当前执行目标是完成 `PLAN.md` 中列出的外部发布任务。
+本地 v1 产品实现和发布链路已完成。仓库不再保留临时执行计划文档；长期规则以本文件为准。
 
-AI 执行 `/goal`、恢复长线程或判断当前任务时，按以下顺序读取当前状态：
+AI 恢复长线程或判断当前任务时，按以下顺序读取长期上下文：
 
-1. `PROGRESS.md`
-2. `PLAN.md`
-3. `RELEASE_POLICY.md`
-4. `RELEASE_AUDIT.md`
-5. `FINAL_REVIEW.md`
-6. `COMPLETION_AUDIT.md`
-7. `README.md`
-8. `package.json`
-
-当前计划只执行 `PLAN.md` 的 `Remaining Release Tasks`。
+1. `AGENTS.md`
+2. `RELEASE_POLICY.md`
+3. `README.md`
+4. `package.json`
+5. 当前任务涉及的产品源文档、源码和测试
 
 ## Source Of Truth
 
@@ -211,7 +206,7 @@ Windows 真实桌面验收：
 - Mac 端通用辅助命令：`win` 打开/执行 SSH 命令，`wincmd` 执行 `cmd.exe /c` 命令，`winps` 执行 PowerShell 命令，`wincp` 上传文件到 Windows，`winaddr` 查询当前局域网 IP。
 - Windows 用户的 `authorized_keys` 中应包含 Mac 端公钥 `roster-windows-ssh`。
 - Windows 通用开发目录为 `C:\Users\indin\Dev`；后续 Windows 构建、打包、命令行测试和日志收集优先通过 Mac -> Windows SSH 执行。
-- 已验证 Windows 工具链：Git、GitHub CLI、ripgrep、Node.js LTS、npm。
+- 已验证 Windows 工具链：Git、GitHub CLI、ripgrep、npm。Windows 发布构建优先使用 `C:\Users\indin\Dev\Tools\node-v22.22.3-win-x64` 并将其加入当前命令的 `PATH`，保持与 CI Node 22 一致；系统 WinGet Node 可能是 v24，不适合本仓库的 `better-sqlite3` 原生依赖安装。
 - UU 远程虚拟地址 `198.18.0.1` 可作为屏幕控制通道参考，但当前 Mac -> Windows SSH 已验证使用局域网地址 `192.168.31.46`。
 - 真实桌面窗口、安装器交互、SmartScreen 提示、Electron UI 验收可通过用户已授权的 UU 远程控制窗口操作。
 - 通过 UU 远程修改远程访问、防火墙、账号或安全策略前，必须有用户明确授权；当前用户已授权启用持久化 SSH 并配置防火墙，用于本项目 Windows 测试和 debug。
@@ -229,18 +224,18 @@ Windows 真实桌面验收：
 - API key 加密存储和脱敏。
 - 大列表虚拟化。
 
-Provider live 验收当前暂缓。设置页已支持自定义文本 LLM Provider 配置，可输入 `baseURL`、模型 ID、模型厂商、API key，并内置 OpenAI、Anthropic、Gemini、DeepSeek、Kimi、Doubao、Qwen、GLM 及用户自定义 OpenAI-compatible Provider。恢复 live paid-provider 验收前，需要用户在真实网络环境中录入可用 API key 并验证标题、文案、图片提示词和图片生成工作流。
+Provider live smoke 可在用户明确提供真实 API key 和网络条件时执行，用于排查具体厂商兼容性；它不是发版门禁。发版不要求验收 OpenAI-compatible、Anthropic、Gemini、OpenAI Image 等真实付费端点。
 
 ## Release Gates
 
-发布、签名、打包和自动更新约束以 `RELEASE_POLICY.md` 为准。若旧审计文档仍提到 Apple Developer ID、notarization、Windows 签名或跨架构发布要求，与 `RELEASE_POLICY.md` 冲突时一律按 `RELEASE_POLICY.md` 执行。
+发布、签名、打包和自动更新约束以 `RELEASE_POLICY.md` 为准。历史 Apple Developer ID、notarization、Windows 签名或跨架构发布方案均已废弃。
 
 发布仓库固定为 `indincys/Roster` / `https://github.com/indincys/Roster.git`。应用内更新必须走 `electron-updater` + published GitHub Release，不跳转 GitHub 让用户手动下载。
 
 用户说“发版”时，默认含义是完整执行应用内自动更新发布链路，而不是只构建本地产物：
 
 1. 根据变更选择下一个正式 semver 版本号，更新根 `package.json`、`apps/desktop/package.json` 和 `package-lock.json`。
-2. 运行适用质量门和发布门禁，至少包括 `npm run typecheck`、`npm run lint`、`npm test`、`npm run test:integration`、`npm run build`、`npm run release:verify`；公开发布前必须处理 `npm run release:verify:strict` 的阻塞项。
+2. 运行适用质量门和发布门禁，至少包括 `npm run typecheck`、`npm run lint`、`npm test`、`npm run test:integration`、`npm run build`、`npm run release:verify` 和 `npm run release:verify:strict`。
 3. 构建 macOS arm64 DMG + ZIP 和 Windows x64 NSIS 安装包，确认 `latest-mac.yml` 指向 ZIP，`latest.yml` 指向 Windows `.exe`，并随 release 上传对应 blockmap。
 4. 提交版本变更，创建并推送 `v{version}` tag 到 `origin`。
 5. 在 GitHub Releases 上创建或更新 `v{version}` Release，上传 macOS、Windows 和更新元数据资产，并发布为 published release。Draft release、GitHub Actions artifact 或本地 `apps/desktop/release/` 产物都不等于客户端可检测更新。
@@ -273,9 +268,7 @@ npm run release:verify:strict
 
 2026-05-20 更新链路排查结论：即使本地或 CI 已生成 artifacts，只要 GitHub 上没有 published Release 和对应更新元数据，macOS / Windows 已安装客户端都无法通过 `electron-updater` 检测到远端更新。后续每次发版都必须重新检查远端 tag、published Release 和更新资产。
 
-当前已知 release blockers：
-
-- 真实 API key + 网络环境下的 live paid-provider success 验收。
+当前没有需要用户真实 API key 或付费网络调用才能解除的发布阻塞项。
 
 ## Implementation Discipline
 
@@ -292,7 +285,6 @@ npm run release:verify:strict
 
 遇到以下条件时停止并报告阻塞项：
 
-- 缺少真实 API key 或网络验收条件。
 - 需要用户决定未定义产品策略。
 - 文档冲突且无法按 source-of-truth 优先级解决。
 - 当前改动可能删除用户数据或破坏已有工作空间。

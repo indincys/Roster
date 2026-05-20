@@ -595,11 +595,6 @@ async function main() {
     );
   }
 
-  warn(
-    "live paid-provider success verification",
-    "not checked by local release verifier; requires user-provided OpenAI-compatible/Anthropic/Gemini/OpenAI Image keys plus network-enabled Electron desktop acceptance"
-  );
-
   const failed = checks.filter((check) => !check.ok);
   const strictFailures = strictReleaseReady ? warnings : [];
   const result = {

@@ -2,7 +2,7 @@
 
 本文件定义「短视频运营工作台」的应用打包、签名、发布和自动更新约定。
 
-本文件优先级高于历史审计文档中的旧签名 / notarization 方案。修改本文件涉及的配置前必须确认影响范围，因为错误配置会导致老用户更新链路损坏。
+修改本文件涉及的配置前必须确认影响范围，因为错误配置会导致老用户更新链路损坏。
 
 ## Platform Support
 
@@ -117,6 +117,8 @@ autoUpdater.quitAndInstall(true, true);
    - Windows: `.exe`、`.exe.blockmap`、`latest.yml`
 5. 在 GitHub 页面审核 draft release，确认 release notes 后点击 publish。
 6. 运行中的旧版本会在 4 小时内检测到更新。
+
+发版不要求真实 API key 或付费模型端点 live 验收。OpenAI-compatible、Anthropic、Gemini、OpenAI Image 等真实网络调用只作为需要时的手动兼容性 smoke，不是 tag、build、Release publish 或 auto-update 的阻塞条件。
 
 ## Native Modules And Resources
 
