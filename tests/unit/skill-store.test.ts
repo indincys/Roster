@@ -84,6 +84,36 @@ describe("ConfigDatabase skill store", () => {
     db.close();
   });
 
+  it("generates sequential type-prefixed skill IDs when creating user skills", async () => {
+    const userDataPath = await makeTempRoot("roster-user-data-");
+    const db = await ConfigDatabase.open(userDataPath);
+
+    const firstTitle = await db.saveSkill({
+      displayName: "标题 Skill A",
+      type: "title",
+      sourceType: "user",
+      content: "标题规则 A"
+    });
+    const secondTitle = await db.saveSkill({
+      displayName: "标题 Skill B",
+      type: "title",
+      sourceType: "user",
+      content: "标题规则 B"
+    });
+    const imagePrompt = await db.saveSkill({
+      displayName: "图片提示词 Skill",
+      type: "image_prompt",
+      sourceType: "user",
+      content: "图片提示词规则"
+    });
+
+    expect(firstTitle.id).toBe("title-01");
+    expect(secondTitle.id).toBe("title-02");
+    expect(imagePrompt.id).toBe("image-prompt-01");
+    await expect(stat(path.join(userDataPath, "skills", "user", "title-01", "meta.json"))).resolves.toBeTruthy();
+    db.close();
+  });
+
   it("keeps workspace activation isolated and filters enabled skills by type", async () => {
     const userDataPath = await makeTempRoot("roster-user-data-");
     const workspacesRoot = await makeTempRoot("roster-workspaces-");

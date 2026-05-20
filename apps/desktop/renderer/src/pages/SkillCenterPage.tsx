@@ -38,13 +38,20 @@ const sourceIcons: Record<SkillSourceType, JSX.Element> = {
   user: <UserRound className="size-3.5" />
 };
 
+const skillIdPrefixes: Record<SkillWorkflowType, string> = {
+  title: "title",
+  image_prompt: "image-prompt",
+  image: "image",
+  script: "script",
+  cover: "cover"
+};
+
 interface SkillForm {
   skillId: string;
   displayName: string;
   type: SkillWorkflowType;
   sourceType: "copy" | "user";
   version: string;
-  defaultModel: string;
   description: string;
   content: string;
 }
@@ -59,21 +66,20 @@ const emptyForm: SkillForm = {
   type: "title",
   sourceType: "user",
   version: "0.1.0",
-  defaultModel: "mock-title",
   description: "",
   content: "# 角色\n你是短视频带货标题专家。\n\n{{include: brand_info.md}}\n"
 };
 
 function buildSaveInput(form: SkillForm, selected: SkillRecord | null): SkillSaveInput {
   return {
-    skillId: selected?.id ?? (form.skillId.trim() || undefined),
+    skillId: selected?.id,
     displayName: form.displayName,
     type: form.type,
     sourceType: form.sourceType,
     version: form.version,
     description: form.description,
-    defaultModel: form.defaultModel.trim() || null,
-    supportedModels: form.defaultModel.trim() ? [form.defaultModel.trim()] : [],
+    defaultModel: null,
+    supportedModels: [],
     content: form.content,
     origin: selected?.origin ?? null
   };
@@ -86,10 +92,19 @@ function toForm(skill: SkillRecord, content: string): SkillForm {
     type: skill.type,
     sourceType: skill.sourceType === "copy" ? "copy" : "user",
     version: skill.version,
-    defaultModel: skill.defaultModel ?? "",
     description: skill.description,
     content
   };
+}
+
+function nextSkillIdPreview(type: SkillWorkflowType, skills: SkillRecord[]): string {
+  const prefix = skillIdPrefixes[type];
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  const maxIndex = skills.reduce((max, skill) => {
+    const match = pattern.exec(skill.id);
+    return match ? Math.max(max, Number.parseInt(match[1] ?? "0", 10) || 0) : max;
+  }, 0);
+  return `${prefix}-${String(maxIndex + 1).padStart(2, "0")}`;
 }
 
 function IncludePreview({ content, onOpen }: { content: string; onOpen(includePath: string): void }): JSX.Element {
@@ -136,6 +151,7 @@ export function SkillCenterPage(): JSX.Element {
 
   const selected = useMemo(() => skills.find((skill) => skill.id === selectedId) ?? null, [selectedId, skills]);
   const enabledIds = useMemo(() => new Set(activation?.enabledSkillIds ?? []), [activation]);
+  const generatedSkillIdPreview = useMemo(() => nextSkillIdPreview(form.type, skills), [form.type, skills]);
   const groupedSkills = useMemo(() => {
     const groups = new Map<SkillWorkflowType, SkillRecord[]>();
     for (const skill of skills) {
@@ -490,7 +506,7 @@ export function SkillCenterPage(): JSX.Element {
         </aside>
 
         <main className="grid min-h-0 grid-cols-[minmax(0,1fr)_280px] gap-4">
-          <section className="min-h-0 overflow-hidden rounded-lg border border-border bg-card">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">{selected ? selected.displayName : "新建 Skill"}</div>
@@ -507,15 +523,18 @@ export function SkillCenterPage(): JSX.Element {
               </Button>
             </div>
 
-            <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
-              <div className="grid grid-cols-4 gap-3">
-                <Input
-                  label="Skill ID"
-                  value={form.skillId}
-                  disabled={Boolean(selected)}
-                  onChange={(event) => setForm((current) => ({ ...current, skillId: event.target.value }))}
-                  data-skill-id-input
-                />
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className="grid grid-cols-[180px_minmax(0,1fr)_180px] gap-3">
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-foreground">Skill ID（自动生成）</span>
+                  <input
+                    className="h-9 rounded-md border border-input bg-muted px-3 font-mono text-sm text-muted-foreground outline-none"
+                    value={selected?.id ?? generatedSkillIdPreview}
+                    readOnly
+                    aria-readonly="true"
+                    data-skill-id-input
+                  />
+                </label>
                 <Input
                   label="显示名称"
                   value={form.displayName}
@@ -537,18 +556,13 @@ export function SkillCenterPage(): JSX.Element {
                     ))}
                   </select>
                 </label>
-                <Input
-                  label="默认模型"
-                  value={form.defaultModel}
-                  onChange={(event) => setForm((current) => ({ ...current, defaultModel: event.target.value }))}
-                />
               </div>
 
-              <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_240px] gap-4">
-                <label className="flex min-h-0 flex-col gap-1.5 text-sm">
+              <div className="mt-4 flex flex-col gap-4">
+                <label className="flex min-h-[520px] flex-col gap-1.5 text-sm">
                   <span className="font-medium text-foreground">当前编辑：{activeFilePath}</span>
                   <textarea
-                    className="min-h-0 flex-1 resize-none rounded-md border border-input bg-background p-3 font-mono text-sm leading-6 outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
+                    className="min-h-[480px] flex-1 resize-y rounded-md border border-input bg-background p-3 font-mono text-sm leading-6 outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
                     value={activeFilePath === "SKILL.md" ? form.content : activeFileContent}
                     onChange={(event) => {
                       const value = event.target.value;
@@ -561,114 +575,117 @@ export function SkillCenterPage(): JSX.Element {
                     data-skill-content-editor
                   />
                 </label>
-                <aside className="min-h-0 overflow-y-auto rounded-lg border border-border p-3">
-                  <div className="mb-2 text-sm font-semibold">文件树</div>
-                  <div className="mb-4 flex flex-col gap-1" data-skill-file-tree>
-                    {skillFiles.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">保存后显示文件树</span>
-                    ) : (
-                      skillFiles.map((file) => (
-                        <button
-                          key={file.relativePath}
-                          className={cn(
-                            "rounded-md border px-2 py-1 text-left text-xs",
-                            activeFilePath === file.relativePath ? "border-primary bg-blue-50 text-blue-800" : "border-border"
-                          )}
-                          onClick={() => openSkillFile(file.relativePath)}
-                          type="button"
-                          data-skill-file={file.relativePath}
-                        >
-                          {file.relativePath}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                  <Button
-                    className="mb-4 w-full"
-                    variant="outline"
-                    size="sm"
-                    onClick={saveActiveFile}
-                    disabled={loading || selected?.sourceType === "official" || !selected}
-                    data-save-skill-file
-                  >
-                    保存当前文件
-                  </Button>
-                  <div className="mb-2 text-sm font-semibold">include 标记</div>
-                  <IncludePreview content={form.content} onOpen={openInclude} />
-                  <div className="mt-4 text-sm font-semibold">即时测试</div>
-                  <div className="mt-2 flex flex-col gap-2 rounded-md border border-border bg-background p-3" data-skill-test-panel>
-                    <label className="flex flex-col gap-1.5 text-xs">
-                      <span className="font-medium text-foreground">测试提示词</span>
-                      <textarea
-                        className="min-h-20 resize-none rounded-md border border-input bg-background px-2 py-2 text-xs leading-5 outline-none"
-                        value={testPrompt}
-                        onChange={(event) => setTestPrompt(event.target.value)}
-                        data-skill-test-prompt
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1.5 text-xs">
-                      <span className="font-medium text-foreground">模型</span>
-                      <select
-                        className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none"
-                        value={`${testModel.provider}:${testModel.model}`}
-                        disabled={skillTestModelPresets.length === 0}
-                        onChange={(event) => {
-                          const [provider, model] = event.target.value.split(":");
-                          const preset = skillTestModelPresets.find(
-                            (candidate) => candidate.provider === provider && candidate.model === model
-                          );
-                          if (preset) {
-                            setTestModel(preset);
-                          }
-                        }}
-                        data-skill-test-model
-                      >
-                        {skillTestModelPresets.length === 0 ? <option value="">请先到设置页保存文本模型 API key</option> : null}
-                        {skillTestModelPresets.map((preset) => (
-                          <option key={`${preset.provider}:${preset.model}`} value={`${preset.provider}:${preset.model}`}>
-                            {preset.provider} / {preset.model}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                <aside className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+                  <div className="rounded-lg border border-border p-3">
+                    <div className="mb-2 text-sm font-semibold">文件树</div>
+                    <div className="mb-4 flex flex-wrap gap-2" data-skill-file-tree>
+                      {skillFiles.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">保存后显示文件树</span>
+                      ) : (
+                        skillFiles.map((file) => (
+                          <button
+                            key={file.relativePath}
+                            className={cn(
+                              "rounded-md border px-2 py-1 text-left text-xs",
+                              activeFilePath === file.relativePath ? "border-primary bg-blue-50 text-blue-800" : "border-border"
+                            )}
+                            onClick={() => openSkillFile(file.relativePath)}
+                            type="button"
+                            data-skill-file={file.relativePath}
+                          >
+                            {file.relativePath}
+                          </button>
+                        ))
+                      )}
+                    </div>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => void runSkillTest()}
-                      disabled={!selected || testing || !testPrompt.trim() || skillTestModelPresets.length === 0}
-                      data-run-skill-test
+                      onClick={saveActiveFile}
+                      disabled={loading || selected?.sourceType === "official" || !selected}
+                      data-save-skill-file
                     >
-                      <TestTube2 />
-                      {testing ? "测试中" : "运行测试"}
+                      保存当前文件
                     </Button>
-                    {testResult ? (
-                      <div
-                        className={cn(
-                          "rounded-md border p-2 text-xs leading-5",
-                          testResult.status === "success"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                            : "border-red-200 bg-red-50 text-red-700"
-                        )}
-                        data-skill-test-result
+                    <div className="mt-4 mb-2 text-sm font-semibold">include 标记</div>
+                    <IncludePreview content={form.content} onOpen={openInclude} />
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <div className="text-sm font-semibold">即时测试</div>
+                    <div className="mt-2 flex flex-col gap-2" data-skill-test-panel>
+                      <label className="flex flex-col gap-1.5 text-xs">
+                        <span className="font-medium text-foreground">测试提示词</span>
+                        <textarea
+                          className="min-h-20 resize-none rounded-md border border-input bg-background px-2 py-2 text-xs leading-5 outline-none"
+                          value={testPrompt}
+                          onChange={(event) => setTestPrompt(event.target.value)}
+                          data-skill-test-prompt
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5 text-xs">
+                        <span className="font-medium text-foreground">模型</span>
+                        <select
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none"
+                          value={`${testModel.provider}:${testModel.model}`}
+                          disabled={skillTestModelPresets.length === 0}
+                          onChange={(event) => {
+                            const [provider, model] = event.target.value.split(":");
+                            const preset = skillTestModelPresets.find(
+                              (candidate) => candidate.provider === provider && candidate.model === model
+                            );
+                            if (preset) {
+                              setTestModel(preset);
+                            }
+                          }}
+                          data-skill-test-model
+                        >
+                          {skillTestModelPresets.length === 0 ? <option value="">请先到设置页保存文本模型 API key</option> : null}
+                          {skillTestModelPresets.map((preset) => (
+                            <option key={`${preset.provider}:${preset.model}`} value={`${preset.provider}:${preset.model}`}>
+                              {preset.provider} / {preset.model}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void runSkillTest()}
+                        disabled={!selected || testing || !testPrompt.trim() || skillTestModelPresets.length === 0}
+                        data-run-skill-test
                       >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="font-semibold">{testResult.status === "success" ? "成功" : "失败"}</span>
-                          <span className="font-mono text-[11px]">
-                            {testResult.provider}/{testResult.model}
-                          </span>
-                        </div>
-                        {testResult.status === "success" ? (
-                          <div className="max-h-44 overflow-auto whitespace-pre-wrap">{testResult.text}</div>
-                        ) : (
-                          <div>{testResult.error}</div>
-                        )}
-                        {testResult.includedFiles.length ? (
-                          <div className="mt-2 text-[11px] text-muted-foreground">
-                            include: {testResult.includedFiles.join(", ")}
+                        <TestTube2 />
+                        {testing ? "测试中" : "运行测试"}
+                      </Button>
+                      {testResult ? (
+                        <div
+                          className={cn(
+                            "rounded-md border p-2 text-xs leading-5",
+                            testResult.status === "success"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : "border-red-200 bg-red-50 text-red-700"
+                          )}
+                          data-skill-test-result
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <span className="font-semibold">{testResult.status === "success" ? "成功" : "失败"}</span>
+                            <span className="font-mono text-[11px]">
+                              {testResult.provider}/{testResult.model}
+                            </span>
                           </div>
-                        ) : null}
-                      </div>
-                    ) : null}
+                          {testResult.status === "success" ? (
+                            <div className="max-h-44 overflow-auto whitespace-pre-wrap">{testResult.text}</div>
+                          ) : (
+                            <div>{testResult.error}</div>
+                          )}
+                          {testResult.includedFiles.length ? (
+                            <div className="mt-2 text-[11px] text-muted-foreground">
+                              include: {testResult.includedFiles.join(", ")}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </aside>
               </div>

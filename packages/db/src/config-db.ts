@@ -8,6 +8,7 @@ import {
   AppSettingsSaveInputSchema,
   AppSettingsSchema,
   ImageSubdirectories,
+  sanitizeImageProviderConfigs,
   sanitizeLlmProviderConfigs,
   SkillActivationConfigSchema,
   SkillActivationUpdateInputSchema,
@@ -58,6 +59,13 @@ import { applySqlMigrations, openSqliteDatabase, type SqliteDatabase } from "./s
 
 const LOCK_STALE_AFTER_MS = 30_000;
 const DEFAULT_SKILL_SNAPSHOT_RETENTION = 50;
+const SKILL_ID_PREFIXES: Record<SkillWorkflowType, string> = {
+  title: "title",
+  image_prompt: "image-prompt",
+  image: "image",
+  script: "script",
+  cover: "cover"
+};
 const DEFAULT_SKILL_MARKET_MANIFEST_URL =
   process.env.ROSTER_SKILL_MARKET_MANIFEST_URL ??
   "https://raw.githubusercontent.com/example/roster-official-skills/main/manifest.json";
@@ -79,6 +87,7 @@ interface WorkspaceRow {
 
 interface ApiKeyRow {
   id: string;
+  kind: string;
   provider: string;
   label: string;
   model: string | null;
@@ -160,6 +169,7 @@ function coerceWorkspaceRow(row: Record<string, unknown>): WorkspaceRow {
 function mapApiKeyRow(row: ApiKeyRow): ApiKeyPublicRecord {
   return {
     id: row.id,
+    kind: ApiKeySaveInputSchema.shape.kind.parse(row.kind),
     provider: ApiKeySaveInputSchema.shape.provider.parse(row.provider),
     label: row.label,
     model: row.model,
@@ -265,6 +275,7 @@ function resolveSkillMarketFileUrl(manifestUrl: string, skillName: string, relat
 function coerceApiKeyRow(row: Record<string, unknown>): ApiKeyRow {
   return {
     id: rowString(row, "id"),
+    kind: rowOptionalString(row, "kind") ?? "text",
     provider: rowString(row, "provider"),
     label: rowString(row, "label"),
     model: rowOptionalString(row, "model"),
@@ -412,7 +423,7 @@ export class ConfigDatabase {
 
   listApiKeys(): ApiKeyPublicRecord[] {
     const rows = this.db
-      .prepare("SELECT id, provider, label, model, is_default, created_at, updated_at FROM api_keys ORDER BY updated_at DESC")
+      .prepare("SELECT id, kind, provider, label, model, is_default, created_at, updated_at FROM api_keys ORDER BY updated_at DESC")
       .all();
     return rows.map((row) => mapApiKeyRow(coerceApiKeyRow(row)));
   }
@@ -440,21 +451,24 @@ export class ConfigDatabase {
     const id = crypto.randomUUID();
     const encrypted = await encryptSecret(path.join(this.userDataPath, "vault"), parsed.apiKey);
     const model = parsed.model?.trim() || null;
-    const existingForProvider = this.listApiKeys().filter((key) => key.provider === parsed.provider);
+    const existingForProvider = this.listApiKeys().filter((key) => key.provider === parsed.provider && key.kind === parsed.kind);
     const shouldSetDefault = parsed.isDefault || existingForProvider.length === 0;
 
     if (shouldSetDefault) {
-      this.db.prepare("UPDATE api_keys SET is_default = 0, updated_at = ? WHERE provider = ?").run(timestamp, parsed.provider);
+      this.db
+        .prepare("UPDATE api_keys SET is_default = 0, updated_at = ? WHERE provider = ? AND kind = ?")
+        .run(timestamp, parsed.provider, parsed.kind);
     }
 
     this.db
       .prepare(
         `INSERT INTO api_keys (
-          id, provider, label, model, is_default, ciphertext, iv, auth_tag, fingerprint, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          id, kind, provider, label, model, is_default, ciphertext, iv, auth_tag, fingerprint, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
+        parsed.kind,
         parsed.provider,
         parsed.label,
         model,
@@ -469,6 +483,7 @@ export class ConfigDatabase {
 
     return {
       id,
+      kind: parsed.kind,
       provider: parsed.provider,
       label: parsed.label,
       model,
@@ -494,20 +509,23 @@ export class ConfigDatabase {
       const defaults = AppSettingsSchema.parse({});
       return {
         ...defaults,
-        llmProviderConfigs: sanitizeLlmProviderConfigs(defaults.llmProviderConfigs)
+        llmProviderConfigs: sanitizeLlmProviderConfigs(defaults.llmProviderConfigs),
+        imageProviderConfigs: sanitizeImageProviderConfigs(defaults.imageProviderConfigs)
       };
     }
     try {
       const parsed = AppSettingsSchema.parse(JSON.parse(raw));
       return {
         ...parsed,
-        llmProviderConfigs: sanitizeLlmProviderConfigs(parsed.llmProviderConfigs)
+        llmProviderConfigs: sanitizeLlmProviderConfigs(parsed.llmProviderConfigs),
+        imageProviderConfigs: sanitizeImageProviderConfigs(parsed.imageProviderConfigs)
       };
     } catch {
       const defaults = AppSettingsSchema.parse({});
       return {
         ...defaults,
-        llmProviderConfigs: sanitizeLlmProviderConfigs(defaults.llmProviderConfigs)
+        llmProviderConfigs: sanitizeLlmProviderConfigs(defaults.llmProviderConfigs),
+        imageProviderConfigs: sanitizeImageProviderConfigs(defaults.imageProviderConfigs)
       };
     }
   }
@@ -520,7 +538,8 @@ export class ConfigDatabase {
     });
     const sanitized = {
       ...next,
-      llmProviderConfigs: sanitizeLlmProviderConfigs(next.llmProviderConfigs)
+      llmProviderConfigs: sanitizeLlmProviderConfigs(next.llmProviderConfigs),
+      imageProviderConfigs: sanitizeImageProviderConfigs(next.imageProviderConfigs)
     };
     this.setPreference("appSettings", JSON.stringify(sanitized));
     return sanitized;
@@ -544,7 +563,7 @@ export class ConfigDatabase {
 
   async saveSkill(input: SkillSaveInput): Promise<SkillRecord> {
     const parsed = SkillSaveInputSchema.parse(input);
-    const id = parsed.skillId ?? crypto.randomUUID();
+    const id = parsed.skillId ?? (await this.nextSkillIdForType(parsed.type));
     const safeName = toSafeSkillDirectoryName(id);
     if (!safeName) {
       throw new Error("Skill ID 不能作为目录名");
@@ -1085,6 +1104,36 @@ export class ConfigDatabase {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
       )
       .run(key, value, nowIso());
+  }
+
+  private async nextSkillIdForType(type: SkillWorkflowType): Promise<string> {
+    const prefix = SKILL_ID_PREFIXES[type];
+    const ids = new Set((await this.listSkills()).map((skill) => skill.id));
+    const userRootPath = path.join(this.userDataPath, "skills", "user");
+    try {
+      for (const entry of await readdir(userRootPath, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith(".")) {
+          ids.add(entry.name);
+        }
+      }
+    } catch {
+      // The user skill directory is created during database open; ignore stale filesystem errors.
+    }
+    const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+    let maxIndex = 0;
+    for (const id of ids) {
+      const match = pattern.exec(id);
+      if (match) {
+        maxIndex = Math.max(maxIndex, Number.parseInt(match[1] ?? "0", 10) || 0);
+      }
+    }
+    let nextIndex = maxIndex + 1;
+    let candidate = `${prefix}-${String(nextIndex).padStart(2, "0")}`;
+    while (ids.has(candidate)) {
+      nextIndex += 1;
+      candidate = `${prefix}-${String(nextIndex).padStart(2, "0")}`;
+    }
+    return candidate;
   }
 
   private async listSkillsFromDirectory(rootPath: string, expectedSourceType: SkillSourceType): Promise<SkillRecord[]> {

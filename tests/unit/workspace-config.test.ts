@@ -98,6 +98,7 @@ describe("ConfigDatabase workspace lifecycle", () => {
     });
 
     expect(saved.provider).toBe("openai");
+    expect(saved.kind).toBe("text");
     expect(saved.model).toBe("gpt-5.4-mini");
     expect(saved.isDefault).toBe(true);
     expect(db.listApiKeys()).toHaveLength(1);
@@ -116,6 +117,10 @@ describe("ConfigDatabase workspace lifecycle", () => {
       backupScope: "all",
       backupRetentionCount: 7,
       providerRetryCount: 3,
+      imageProviderConfigs: expect.arrayContaining([
+        expect.objectContaining({ id: "mock", adapter: "mock", defaultModel: "mock-image", enabled: true }),
+        expect.objectContaining({ id: "openai", adapter: "openai-image", defaultModel: "gpt-image-1.5", enabled: false })
+      ]),
       llmProviderConfigs: expect.arrayContaining([
         expect.objectContaining({ id: "deepseek", adapter: "openai-compatible", defaultModel: "deepseek-chat", enabled: false }),
         expect.objectContaining({ id: "qwen", adapter: "openai-compatible", defaultModel: "qwen-plus", enabled: false })
@@ -184,6 +189,33 @@ describe("ConfigDatabase workspace lifecycle", () => {
       model: "deepseek-reasoner",
       isDefault: true
     });
+    db.close();
+  });
+
+  it("keeps default API keys isolated by credential type", async () => {
+    const userDataPath = await makeTempRoot("roster-user-data-");
+    const db = await ConfigDatabase.open(userDataPath);
+
+    const textKey = await db.saveApiKey({
+      kind: "text",
+      provider: "openai",
+      label: "OpenAI 文本",
+      model: "gpt-5.4-mini",
+      isDefault: true,
+      apiKey: "sk-openai-text-1234567890"
+    });
+    const imageKey = await db.saveApiKey({
+      kind: "image",
+      provider: "openai",
+      label: "OpenAI 图片",
+      model: "gpt-image-1.5",
+      isDefault: true,
+      apiKey: "sk-openai-image-1234567890"
+    });
+
+    const keys = db.listApiKeys().filter((key) => key.provider === "openai");
+    expect(keys.find((key) => key.id === textKey.id)).toMatchObject({ kind: "text", isDefault: true });
+    expect(keys.find((key) => key.id === imageKey.id)).toMatchObject({ kind: "image", isDefault: true });
     db.close();
   });
 

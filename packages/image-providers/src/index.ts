@@ -1,4 +1,4 @@
-export type ImageProviderId = "mock" | "openai";
+export type ImageProviderId = string;
 export type ImageAspectRatio = "1:1" | "3:4" | "9:16" | "16:9";
 
 export interface ImageGenerateRequest {
@@ -37,6 +37,7 @@ export interface ImageProvider {
 export type ProviderFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 export interface OpenAIImageProviderOptions {
+  id?: ImageProviderId;
   fetch?: ProviderFetch;
   baseUrl?: string;
   apiKey?: string;
@@ -83,7 +84,11 @@ function buildMockImageSvg(input: { prompt: string; index: number; width: number
 }
 
 export class MockImageProvider implements ImageProvider {
-  readonly id = "mock" as const;
+  readonly id: ImageProviderId;
+
+  constructor(id: ImageProviderId = "mock") {
+    this.id = id;
+  }
 
   async listModels(): Promise<string[]> {
     return ["mock-image"];
@@ -175,12 +180,13 @@ function extractImageModelIds(body: unknown): string[] {
 }
 
 export class OpenAIImageProvider implements ImageProvider {
-  readonly id = "openai" as const;
+  readonly id: ImageProviderId;
   private readonly fetchImpl: ProviderFetch;
   private readonly baseUrl: string;
   private readonly apiKey?: string;
 
   constructor(options: OpenAIImageProviderOptions = {}) {
+    this.id = options.id ?? "openai";
     this.fetchImpl = options.fetch ?? fetch;
     this.baseUrl = options.baseUrl ?? "https://api.openai.com/v1";
     this.apiKey = options.apiKey;

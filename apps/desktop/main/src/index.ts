@@ -69,8 +69,10 @@ import {
   WorkspaceCreateInputSchema,
   type ApiCallProvider,
   type ApiCallWorkflow,
+  type ApiKeyKind,
   type BootstrapState,
   type ApiKeyConnectionTestResult,
+  type ImageProviderConfig,
   type LlmProviderConfig,
   type TitleWorkspaceColumnResult,
   type SoftwareUpdateCheckResult,
@@ -97,7 +99,13 @@ import {
   createTimelineThumbnailGenerator,
   type FfmpegToolPaths
 } from "@roster/ffmpeg-utils";
-import { createDefaultImageProviders, imageDimensions as getImageDimensions } from "@roster/image-providers";
+import {
+  MockImageProvider,
+  OpenAIImageProvider,
+  createDefaultImageProviders,
+  imageDimensions as getImageDimensions,
+  type ImageProvider
+} from "@roster/image-providers";
 import {
   LLMProviderError,
   AnthropicLLMProvider,
@@ -762,7 +770,15 @@ function installSoftwareUpdate(): SoftwareUpdateInstallResult {
   return { initiated: true };
 }
 
-async function listProviderModels(provider: string, apiKey: string): Promise<string[]> {
+async function listProviderModels(kind: ApiKeyKind, provider: string, apiKey: string): Promise<string[]> {
+  if (kind === "image") {
+    const config = getImageProviderConfig(provider);
+    const imageProvider = config ? createImageProviderFromConfig(config, apiKey) : null;
+    if (!imageProvider) {
+      throw new Error("UnsupportedProvider");
+    }
+    return imageProvider.listModels();
+  }
   const config = getLlmProviderConfig(provider);
   const llmProvider = config ? createLlmProviderFromConfig(config, apiKey) : null;
   if (!llmProvider) {
@@ -775,7 +791,7 @@ async function testApiKeyConnection(apiKeyId: string): Promise<ApiKeyConnectionT
   const checkedAt = new Date().toISOString();
   try {
     const { record, apiKey } = await getConfigDb().getApiKeySecret(apiKeyId);
-    const models = redactModels(await listProviderModels(record.provider, apiKey));
+    const models = redactModels(await listProviderModels(record.kind, record.provider, apiKey));
     return {
       apiKeyId,
       provider: record.provider,
@@ -1021,11 +1037,11 @@ function runTaskSheetScheduledJob(job: ScheduledJobRecord): ScheduledJobExecutio
   };
 }
 
-async function getLatestApiKeyForProvider(provider: ApiCallProvider, model?: string): Promise<string | null> {
+async function getLatestApiKeyForProvider(provider: ApiCallProvider, model?: string, kind: ApiKeyKind = "text"): Promise<string | null> {
   if (provider === "mock") {
     return null;
   }
-  const candidates = getConfigDb().listApiKeys().filter((candidate) => candidate.provider === provider);
+  const candidates = getConfigDb().listApiKeys().filter((candidate) => candidate.kind === kind && candidate.provider === provider);
   const key =
     (model
       ? candidates.find((candidate) => candidate.model === model && candidate.isDefault) ??
@@ -1041,6 +1057,10 @@ async function getLatestApiKeyForProvider(provider: ApiCallProvider, model?: str
 
 function getLlmProviderConfig(provider: string): LlmProviderConfig | null {
   return getConfigDb().getSettings().llmProviderConfigs.find((config) => config.id === provider && config.enabled) ?? null;
+}
+
+function getImageProviderConfig(provider: string): ImageProviderConfig | null {
+  return getConfigDb().getSettings().imageProviderConfigs.find((config) => config.id === provider && config.enabled) ?? null;
 }
 
 function createLlmProviderFromConfig(config: LlmProviderConfig, apiKey?: string): LLMProvider | null {
@@ -1060,6 +1080,57 @@ function createLlmProviderFromConfig(config: LlmProviderConfig, apiKey?: string)
     return new GoogleLLMProvider({ id: config.id, baseUrl: config.baseUrl ?? undefined, apiKey });
   }
   return null;
+}
+
+function createImageProviderFromConfig(config: ImageProviderConfig, apiKey?: string): ImageProvider | null {
+  if (config.adapter === "mock") {
+    return new MockImageProvider(config.id);
+  }
+  if (config.adapter === "openai-image") {
+    return new OpenAIImageProvider({ id: config.id, baseUrl: config.baseUrl ?? undefined, apiKey });
+  }
+  return null;
+}
+
+async function getImageApiKeyForTarget(target: { provider: ApiCallProvider; model: string; apiKeyId?: string | null }): Promise<string | undefined> {
+  if (target.provider === "mock") {
+    return undefined;
+  }
+  if (target.apiKeyId) {
+    const { record, apiKey } = await getConfigDb().getApiKeySecret(target.apiKeyId);
+    if (record.kind !== "image" || record.provider !== target.provider) {
+      throw new Error(`图片 API key 与 Provider 不匹配：${target.provider}`);
+    }
+    if (record.model && record.model !== target.model) {
+      throw new Error(`图片 API key 模型不匹配：${target.model}`);
+    }
+    return apiKey;
+  }
+  return (await getLatestApiKeyForProvider(target.provider, target.model, "image")) ?? undefined;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let cursor = 0;
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        try {
+          results[index] = { status: "fulfilled", value: await worker(items[index] as T, index) };
+        } catch (error) {
+          results[index] = { status: "rejected", reason: error };
+        }
+      }
+    })
+  );
+  return results;
 }
 
 function providerErrorCode(error: unknown): string {
@@ -1995,84 +2066,120 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE, async (_event, payload: unknown) => {
     const input = ImageWorkspaceGenerateInputSchema.parse(payload);
     const workspaceRootPath = getActiveWorkspaceRootPath();
-    const providers = createDefaultImageProviders();
-    const provider = input.model.startsWith("mock") ? providers.mock : providers.openai;
-    if (!provider) {
-      throw new Error(`图片 Provider 未配置：${input.model}`);
-    }
-    const providerApiKey = provider.id === "mock" ? undefined : await getLatestApiKeyForProvider(provider.id, input.model);
     const expectedDimensions = getImageDimensions(input.aspectRatio);
     return withActiveWorkspaceDb(async (db) => {
-      const prompts = db.listPrompts().filter((prompt) => input.promptIds.includes(prompt.id));
-      const savedImages: ImageLibraryItem[] = [];
-      for (const prompt of prompts) {
-        const startedAt = new Date().toISOString();
-        let generated;
-        try {
-          if (provider.id !== "mock" && !providerApiKey) {
-            throw new Error(`未配置 ${provider.id} API key`);
+      const promptById = new Map(db.listPrompts().map((prompt) => [prompt.id, prompt]));
+      const prompts = input.promptIds.map((promptId) => promptById.get(promptId)).filter((prompt): prompt is NonNullable<typeof prompt> => Boolean(prompt));
+      if (prompts.length === 0) {
+        throw new Error("未找到可生成图片的提示词");
+      }
+      const targets =
+        input.targets.length > 0
+          ? input.targets
+          : [
+              {
+                provider: input.provider ?? (input.model.startsWith("mock") ? "mock" : "openai"),
+                model: input.model,
+                apiKeyId: null
+              }
+            ];
+      const jobs =
+        input.generationStrategy === "all_providers"
+          ? prompts.flatMap((prompt) => targets.map((target) => ({ prompt, target })))
+          : prompts.map((prompt, index) => ({ prompt, target: targets[index % targets.length] as (typeof targets)[number] }));
+      const settled = await mapWithConcurrency(
+        jobs,
+        getConfigDb().getSettings().providerConcurrencyLimit,
+        async ({ prompt, target }) => {
+          const config = getImageProviderConfig(target.provider);
+          const providerApiKey = await getImageApiKeyForTarget(target);
+          const provider = config ? createImageProviderFromConfig(config, providerApiKey) : null;
+          if (!provider) {
+            throw new Error(`图片 Provider 未配置：${target.provider}`);
           }
-          generated = await provider.generate({
-            provider: provider.id,
-            model: input.model,
-            prompt: prompt.text,
-            count: input.perPromptCount,
-            ratio: input.aspectRatio,
-            apiKey: providerApiKey ?? undefined
-          });
-          db.saveApiCallLog({
-            provider: provider.id,
-            model: input.model,
-            workflow: "image_workspace",
-            status: "success",
-            startedAt,
-            finishedAt: new Date().toISOString(),
-            durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
-            inputTokens: null,
-            outputTokens: null,
-            totalTokens: null
-          });
-        } catch (error) {
-          db.saveApiCallLog({
-            provider: provider.id,
-            model: input.model,
-            workflow: "image_workspace",
-            status: "failed",
-            startedAt,
-            finishedAt: new Date().toISOString(),
-            durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
-            errorCode: providerErrorCode(error),
-            errorMessage: redactSensitiveText(error instanceof Error ? error.message : String(error))
-          });
-          throw error;
+          if (provider.id !== "mock" && !providerApiKey) {
+            throw new Error(`未配置 ${provider.id} 图片 API key`);
+          }
+          const startedAt = new Date().toISOString();
+          try {
+            const generated = await provider.generate({
+              provider: provider.id,
+              model: target.model,
+              prompt: prompt.text,
+              count: input.perPromptCount,
+              ratio: input.aspectRatio,
+              apiKey: providerApiKey
+            });
+            db.saveApiCallLog({
+              provider: provider.id,
+              model: target.model,
+              workflow: "image_workspace",
+              status: "success",
+              startedAt,
+              finishedAt: new Date().toISOString(),
+              durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
+              inputTokens: null,
+              outputTokens: null,
+              totalTokens: null
+            });
+            const savedImages: ImageLibraryItem[] = [];
+            for (const generatedImage of generated.images) {
+              const providerSlug = provider.id.replace(/[^A-Za-z0-9._-]+/g, "-");
+              const fileName = `${prompt.id}-${providerSlug}-${generatedImage.id}.${generatedImage.extension}`;
+              const relativePath = path.posix.join("images", input.outputSubdir, fileName);
+              const absolutePath = path.join(workspaceRootPath, relativePath);
+              await mkdir(path.dirname(absolutePath), { recursive: true });
+              await writeFile(absolutePath, generatedImage.bytes);
+              savedImages.push(
+                toImageLibraryItem(
+                  db.saveImage({
+                    promptId: prompt.id,
+                    relativePath,
+                    scene: prompt.scene,
+                    width: generatedImage.width || expectedDimensions.width,
+                    height: generatedImage.height || expectedDimensions.height,
+                    aspectRatio: input.aspectRatio,
+                    sourceModel: `${generated.provider}/${generated.model}`,
+                    status: "active",
+                    generatedAt: new Date().toISOString()
+                  })
+                )
+              );
+            }
+            db.incrementPromptGeneratedCount(prompt.id, savedImages.length);
+            return savedImages;
+          } catch (error) {
+            db.saveApiCallLog({
+              provider: provider.id,
+              model: target.model,
+              workflow: "image_workspace",
+              status: "failed",
+              startedAt,
+              finishedAt: new Date().toISOString(),
+              durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
+              errorCode: providerErrorCode(error),
+              errorMessage: redactSensitiveText(error instanceof Error ? error.message : String(error))
+            });
+            throw error;
+          }
         }
-        for (const generatedImage of generated.images) {
-          const fileName = `${prompt.id}-${generatedImage.id}.${generatedImage.extension}`;
-          const relativePath = path.posix.join("images", input.outputSubdir, fileName);
-          const absolutePath = path.join(workspaceRootPath, relativePath);
-          await mkdir(path.dirname(absolutePath), { recursive: true });
-          await writeFile(absolutePath, generatedImage.bytes);
-          savedImages.push(
-            toImageLibraryItem(
-              db.saveImage({
-                promptId: prompt.id,
-                relativePath,
-                scene: prompt.scene,
-                width: generatedImage.width || expectedDimensions.width,
-                height: generatedImage.height || expectedDimensions.height,
-                aspectRatio: input.aspectRatio,
-                sourceModel: generated.model,
-                status: "active",
-                generatedAt: new Date().toISOString()
-              })
-            )
-          );
-        }
-        db.incrementPromptGeneratedCount(prompt.id, input.perPromptCount);
+      );
+      const savedImages = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+      const errors = [
+        ...new Set(
+          settled
+            .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+            .map((result) => redactSensitiveText(result.reason instanceof Error ? result.reason.message : String(result.reason)))
+        )
+      ];
+      if (savedImages.length === 0 && errors.length > 0) {
+        throw new Error(errors[0]);
       }
       return {
-        requested: input.promptIds.length * input.perPromptCount,
-        savedImages
+        requested: jobs.length * input.perPromptCount,
+        savedImages,
+        failed: errors.length,
+        errors
       };
     });
   });

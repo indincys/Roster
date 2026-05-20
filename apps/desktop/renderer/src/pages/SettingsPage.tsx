@@ -2,14 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type {
   ApiKeyConnectionTestResult,
+  ApiKeyKind,
   AppSettings,
+  ImageProviderAdapter,
+  ImageProviderConfig,
   LlmProviderAdapter,
   LlmProviderConfig,
   PlatformAccountRecord,
   SoftwareUpdateCheckResult,
   WorkspaceCloudSyncCheckResult
 } from "@roster/shared-types";
-import { DEFAULT_LLM_PROVIDER_CONFIGS, ProviderIdSchema } from "@roster/shared-types";
+import { DEFAULT_IMAGE_PROVIDER_CONFIGS, DEFAULT_LLM_PROVIDER_CONFIGS, ProviderIdSchema } from "@roster/shared-types";
 import {
   Archive,
   Cloud,
@@ -32,7 +35,7 @@ interface SimpleProviderPreset {
   id: string;
   label: string;
   vendor: string;
-  adapter: LlmProviderAdapter;
+  adapter: LlmProviderAdapter | ImageProviderAdapter;
   baseUrl: string | null;
   defaultModel: string;
 }
@@ -112,39 +115,63 @@ const SIMPLE_PROVIDER_PRESETS: SimpleProviderPreset[] = [
   }
 ];
 
-function presetForVendor(vendor: string): SimpleProviderPreset | null {
+const IMAGE_PROVIDER_PRESETS: SimpleProviderPreset[] = [
+  {
+    id: "openai",
+    label: "OpenAI Image",
+    vendor: "OpenAI",
+    adapter: "openai-image",
+    baseUrl: "https://api.openai.com/v1",
+    defaultModel: "gpt-image-1.5"
+  },
+  {
+    id: "mock",
+    label: "Mock 图片本地测试",
+    vendor: "Mock 图片本地测试",
+    adapter: "mock",
+    baseUrl: null,
+    defaultModel: "mock-image"
+  }
+];
+
+function presetsForKind(kind: ApiKeyKind): SimpleProviderPreset[] {
+  return kind === "image" ? IMAGE_PROVIDER_PRESETS : SIMPLE_PROVIDER_PRESETS;
+}
+
+function presetForVendor(vendor: string, kind: ApiKeyKind = "text"): SimpleProviderPreset | null {
+  const presets = presetsForKind(kind);
   const normalized = vendor.trim().toLowerCase();
   if (!normalized) {
     return null;
   }
   if (normalized.includes("deepseek")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "deepseek") ?? null;
+    return presets.find((preset) => preset.id === "deepseek") ?? null;
   }
   if (normalized.includes("kimi") || normalized.includes("moonshot")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "kimi") ?? null;
+    return presets.find((preset) => preset.id === "kimi") ?? null;
   }
   if (normalized.includes("doubao") || normalized.includes("豆包") || normalized.includes("volcano") || normalized.includes("火山")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "doubao") ?? null;
+    return presets.find((preset) => preset.id === "doubao") ?? null;
   }
   if (normalized.includes("qwen") || normalized.includes("通义") || normalized.includes("千问") || normalized.includes("dashscope")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "qwen") ?? null;
+    return presets.find((preset) => preset.id === "qwen") ?? null;
   }
   if (normalized.includes("glm") || normalized.includes("智谱")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "glm") ?? null;
+    return presets.find((preset) => preset.id === "glm") ?? null;
   }
   if (normalized.includes("gemini") || normalized.includes("google")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "google") ?? null;
+    return presets.find((preset) => preset.id === "google") ?? null;
   }
   if (normalized.includes("anthropic") || normalized.includes("claude")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "anthropic") ?? null;
+    return presets.find((preset) => preset.id === "anthropic") ?? null;
   }
   if (normalized.includes("openai")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "openai") ?? null;
+    return presets.find((preset) => preset.id === "openai") ?? null;
   }
   if (normalized.includes("mock")) {
-    return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.id === "mock") ?? null;
+    return presets.find((preset) => preset.id === "mock") ?? null;
   }
-  return SIMPLE_PROVIDER_PRESETS.find((preset) => preset.vendor.toLowerCase() === normalized || preset.label.toLowerCase() === normalized) ?? null;
+  return presets.find((preset) => preset.vendor.toLowerCase() === normalized || preset.label.toLowerCase() === normalized) ?? null;
 }
 
 function hashVendor(vendor: string): string {
@@ -155,8 +182,8 @@ function hashVendor(vendor: string): string {
   return hash.toString(36);
 }
 
-function providerIdForVendor(vendor: string): string {
-  const preset = presetForVendor(vendor);
+function providerIdForVendor(vendor: string, kind: ApiKeyKind): string {
+  const preset = presetForVendor(vendor, kind);
   if (preset) {
     return preset.id;
   }
@@ -170,8 +197,16 @@ function providerIdForVendor(vendor: string): string {
   return asciiSlug || `custom-${hashVendor(vendor)}`;
 }
 
-function adapterForVendor(vendor: string): LlmProviderAdapter {
-  return presetForVendor(vendor)?.adapter ?? "openai-compatible";
+function textAdapterForVendor(vendor: string): LlmProviderAdapter {
+  const adapter = presetForVendor(vendor, "text")?.adapter;
+  return adapter === "mock" || adapter === "openai" || adapter === "anthropic" || adapter === "google" || adapter === "openai-compatible"
+    ? adapter
+    : "openai-compatible";
+}
+
+function imageAdapterForVendor(vendor: string): ImageProviderAdapter {
+  const adapter = presetForVendor(vendor, "image")?.adapter;
+  return adapter === "mock" || adapter === "openai-image" ? adapter : "openai-image";
 }
 
 export function SettingsPage(): JSX.Element {
@@ -183,6 +218,7 @@ export function SettingsPage(): JSX.Element {
   const [rootPath, setRootPath] = useState("");
   const [macRootPath, setMacRootPath] = useState("");
   const [winRootPath, setWinRootPath] = useState("");
+  const [apiKeyKind, setApiKeyKind] = useState<ApiKeyKind>("text");
   const [modelVendor, setModelVendor] = useState("OpenAI");
   const [modelId, setModelId] = useState("gpt-5.4-mini");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
@@ -256,6 +292,23 @@ export function SettingsPage(): JSX.Element {
     setApiFormHydrated(true);
   }, [apiFormHydrated, settings]);
 
+  useEffect(() => {
+    if (!apiFormHydrated || !settings) {
+      return;
+    }
+    const firstConfig =
+      apiKeyKind === "image"
+        ? settings.imageProviderConfigs.find((config) => config.id !== "mock") ?? settings.imageProviderConfigs[0]
+        : settings.llmProviderConfigs.find((config) => config.id !== "mock") ?? settings.llmProviderConfigs[0];
+    if (!firstConfig) {
+      return;
+    }
+    setModelVendor(firstConfig.vendor || firstConfig.label);
+    setModelId(firstConfig.defaultModel);
+    setBaseUrl(firstConfig.baseUrl ?? "");
+    setApiConnectionTestResult(null);
+  }, [apiFormHydrated, apiKeyKind, settings]);
+
   const saveSettings = async (input: Partial<AppSettings>): Promise<void> => {
     const saved = await window.roster.saveSettings(input);
     setSettings(saved);
@@ -263,6 +316,10 @@ export function SettingsPage(): JSX.Element {
   };
 
   const providerConfigs = useMemo(() => settings?.llmProviderConfigs ?? [...DEFAULT_LLM_PROVIDER_CONFIGS], [settings?.llmProviderConfigs]);
+  const imageProviderConfigs = useMemo(
+    () => settings?.imageProviderConfigs ?? [...DEFAULT_IMAGE_PROVIDER_CONFIGS],
+    [settings?.imageProviderConfigs]
+  );
   const saveProviderConfigs = async (configs: LlmProviderConfig[], message = "Provider 配置已保存。"): Promise<AppSettings> => {
     const saved = await window.roster.saveSettings({ llmProviderConfigs: configs });
     setSettings(saved);
@@ -283,6 +340,26 @@ export function SettingsPage(): JSX.Element {
     return parsed;
   };
 
+  const saveImageProviderConfigs = async (configs: ImageProviderConfig[], message = "图片 Provider 配置已保存。"): Promise<AppSettings> => {
+    const saved = await window.roster.saveSettings({ imageProviderConfigs: configs });
+    setSettings(saved);
+    setSavedMessage(message);
+    return saved;
+  };
+
+  const upsertImageProviderConfig = async (config: ImageProviderConfig, message?: string): Promise<ImageProviderConfig> => {
+    const parsed = {
+      ...config,
+      id: ProviderIdSchema.parse(config.id),
+      baseUrl: config.baseUrl?.trim() ? config.baseUrl.trim().replace(/\/+$/, "") : null
+    };
+    const next = [...imageProviderConfigs.filter((candidate) => candidate.id !== parsed.id), parsed].sort((left, right) =>
+      left.label.localeCompare(right.label, "zh-Hans-CN")
+    );
+    await saveImageProviderConfigs(next, message);
+    return parsed;
+  };
+
   const submitWorkspace = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     await createWorkspace({
@@ -299,7 +376,7 @@ export function SettingsPage(): JSX.Element {
   };
 
   const selectPreset = (vendor: string): void => {
-    const preset = presetForVendor(vendor);
+    const preset = presetForVendor(vendor, apiKeyKind);
     if (!preset) {
       setModelVendor(vendor);
       setApiConnectionTestResult(null);
@@ -313,13 +390,13 @@ export function SettingsPage(): JSX.Element {
 
   const buildProviderConfigFromSimpleForm = (): LlmProviderConfig => {
     const vendor = modelVendor.trim();
-    const preset = presetForVendor(vendor);
+    const preset = presetForVendor(vendor, "text");
     const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
     return {
-      id: providerIdForVendor(vendor),
+      id: providerIdForVendor(vendor, "text"),
       label: preset?.label ?? vendor,
       vendor,
-      adapter: adapterForVendor(vendor),
+      adapter: textAdapterForVendor(vendor),
       baseUrl: normalizedBaseUrl ? normalizedBaseUrl : null,
       defaultModel: modelId.trim(),
       enabled: true,
@@ -327,13 +404,32 @@ export function SettingsPage(): JSX.Element {
     };
   };
 
+  const buildImageProviderConfigFromSimpleForm = (): ImageProviderConfig => {
+    const vendor = modelVendor.trim();
+    const preset = presetForVendor(vendor, "image");
+    const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+    return {
+      id: providerIdForVendor(vendor, "image"),
+      label: preset?.label ?? vendor,
+      vendor,
+      adapter: imageAdapterForVendor(vendor),
+      baseUrl: normalizedBaseUrl ? normalizedBaseUrl : null,
+      defaultModel: modelId.trim(),
+      enabled: true,
+      isBuiltin: preset ? DEFAULT_IMAGE_PROVIDER_CONFIGS.some((config) => config.id === preset.id) : false
+    };
+  };
+
   const submitApiKey = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     setApiConnectionTestResult(null);
-    const provider = await upsertProviderConfig(buildProviderConfigFromSimpleForm(), "API 配置已保存，正在测试连接。");
+    const provider =
+      apiKeyKind === "image"
+        ? await upsertImageProviderConfig(buildImageProviderConfigFromSimpleForm(), "图片 API 配置已保存，正在测试连接。")
+        : await upsertProviderConfig(buildProviderConfigFromSimpleForm(), "文本 API 配置已保存，正在测试连接。");
     const model = provider.defaultModel;
     const label = apiKeyLabel.trim() || `${provider.label} / ${model}`;
-    const savedKey = await saveApiKey({ provider: provider.id, label, model, isDefault: apiKeyDefault, apiKey });
+    const savedKey = await saveApiKey({ kind: apiKeyKind, provider: provider.id, label, model, isDefault: apiKeyDefault, apiKey });
     const result = await window.roster.testApiKey({ apiKeyId: savedKey.id });
     setApiConnectionTestResult(result);
     setApiKey("");
@@ -630,18 +726,30 @@ export function SettingsPage(): JSX.Element {
             <CardContent className="flex flex-col gap-4">
               <form className="flex flex-col gap-3" onSubmit={(event) => void submitApiKey(event)} data-api-config-form>
                 <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-foreground">Key 类型</span>
+                  <select
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
+                    value={apiKeyKind}
+                    onChange={(event) => setApiKeyKind(event.target.value as ApiKeyKind)}
+                    data-api-key-kind
+                  >
+                    <option value="text">文本大模型</option>
+                    <option value="image">图片生成大模型</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-foreground">大模型厂商</span>
                   <input
                     className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
                     list="model-vendor-presets"
                     value={modelVendor}
                     onChange={(event) => selectPreset(event.target.value)}
-                    placeholder="OpenAI、DeepSeek、Kimi、豆包、Qwen、GLM、自定义厂商"
+                    placeholder={apiKeyKind === "image" ? "OpenAI Image、自定义图片 Provider" : "OpenAI、DeepSeek、Kimi、豆包、Qwen、GLM、自定义厂商"}
                     data-model-vendor
                   />
                   <datalist id="model-vendor-presets">
-                    {SIMPLE_PROVIDER_PRESETS.map((preset) => (
-                      <option key={preset.id} value={preset.vendor} />
+                    {presetsForKind(apiKeyKind).map((preset) => (
+                      <option key={`${apiKeyKind}-${preset.id}`} value={preset.vendor} />
                     ))}
                   </datalist>
                 </label>
@@ -652,7 +760,7 @@ export function SettingsPage(): JSX.Element {
                     setModelId(event.target.value);
                     setApiConnectionTestResult(null);
                   }}
-                  placeholder="gpt-5.4-mini"
+                  placeholder={apiKeyKind === "image" ? "gpt-image-1.5" : "gpt-5.4-mini"}
                   data-model-id
                 />
                 <Input
@@ -695,7 +803,13 @@ export function SettingsPage(): JSX.Element {
                 <Button
                   variant="primary"
                   type="submit"
-                  disabled={!modelVendor.trim() || !modelId.trim() || !apiKey.trim() || (adapterForVendor(modelVendor) !== "mock" && !baseUrl.trim())}
+                  disabled={
+                    !modelVendor.trim() ||
+                    !modelId.trim() ||
+                    !apiKey.trim() ||
+                    ((apiKeyKind === "image" ? imageAdapterForVendor(modelVendor) !== "mock" : textAdapterForVendor(modelVendor) !== "mock") &&
+                      !baseUrl.trim())
+                  }
                   data-save-api-key
                   data-test-api-key
                 >
@@ -717,7 +831,9 @@ export function SettingsPage(): JSX.Element {
                 <div className="flex flex-col gap-2 rounded-md border border-border bg-background p-3" data-api-key-list>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-foreground">已保存 API key</span>
-                    <Badge variant="neutral">{apiKeys.length} 个</Badge>
+                    <Badge variant="neutral">
+                      文本 {apiKeys.filter((record) => record.kind === "text").length} / 图片 {apiKeys.filter((record) => record.kind === "image").length}
+                    </Badge>
                   </div>
                   {apiKeys.length === 0 ? (
                     <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
@@ -737,7 +853,10 @@ export function SettingsPage(): JSX.Element {
                               {record.provider}{record.model ? ` / ${record.model}` : ""}
                             </div>
                           </div>
-                          <Badge variant={record.isDefault ? "success" : "neutral"}>{record.isDefault ? "默认" : "备用"}</Badge>
+                          <div className="flex items-center gap-1">
+                            <Badge variant={record.kind === "image" ? "info" : "neutral"}>{record.kind === "image" ? "图片" : "文本"}</Badge>
+                            <Badge variant={record.isDefault ? "success" : "neutral"}>{record.isDefault ? "默认" : "备用"}</Badge>
+                          </div>
                         </div>
                       ))}
                     </div>

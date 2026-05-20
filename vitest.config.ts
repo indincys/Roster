@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import path from "node:path";
 
 export default defineConfig({
@@ -18,6 +18,7 @@ export default defineConfig({
     environment: "node",
     globals: true,
     setupFiles: ["./tests/setup.ts"],
+    exclude: [...configDefaults.exclude, ".claude/**", ".codex/**"],
     coverage: {
       reporter: ["text", "html"]
     }

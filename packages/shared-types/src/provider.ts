@@ -8,6 +8,7 @@ export const ProviderIdSchema = z
   .regex(/^[a-z0-9][a-z0-9._-]*$/, "Provider ID 只能使用小写字母、数字、点、下划线或连字符");
 
 export const LlmProviderAdapterSchema = z.enum(["mock", "openai", "anthropic", "google", "openai-compatible"]);
+export const ImageProviderAdapterSchema = z.enum(["mock", "openai-image"]);
 
 export const DEFAULT_LLM_PROVIDER_CONFIGS = [
   {
@@ -102,6 +103,29 @@ export const DEFAULT_LLM_PROVIDER_CONFIGS = [
   }
 ] as const;
 
+export const DEFAULT_IMAGE_PROVIDER_CONFIGS = [
+  {
+    id: "mock",
+    label: "Mock 图片本地测试",
+    vendor: "Mock",
+    adapter: "mock",
+    baseUrl: null,
+    defaultModel: "mock-image",
+    enabled: true,
+    isBuiltin: true
+  },
+  {
+    id: "openai",
+    label: "OpenAI Image",
+    vendor: "OpenAI",
+    adapter: "openai-image",
+    baseUrl: "https://api.openai.com/v1",
+    defaultModel: "gpt-image-1.5",
+    enabled: false,
+    isBuiltin: true
+  }
+] as const;
+
 const SECRET_LIKE_PATTERN = /(sk-[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{8,}|anthropic[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)/i;
 
 export function containsSecretLikeToken(value: string | null | undefined): boolean {
@@ -109,6 +133,18 @@ export function containsSecretLikeToken(value: string | null | undefined): boole
 }
 
 export function isSafeLlmProviderConfig(config: {
+  id: string;
+  label: string;
+  vendor: string;
+  baseUrl?: string | null;
+  defaultModel: string;
+}): boolean {
+  return ![config.id, config.label, config.vendor, config.baseUrl ?? "", config.defaultModel].some((value) =>
+    containsSecretLikeToken(value)
+  );
+}
+
+export function isSafeImageProviderConfig(config: {
   id: string;
   label: string;
   vendor: string;
@@ -143,6 +179,29 @@ export function sanitizeLlmProviderConfigs<T extends {
   return sanitized;
 }
 
+export function sanitizeImageProviderConfigs<T extends {
+  id: string;
+  label: string;
+  vendor: string;
+  baseUrl?: string | null;
+  defaultModel: string;
+}>(configs: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const sanitized: T[] = [];
+  for (const config of configs) {
+    if (!isSafeImageProviderConfig(config)) {
+      continue;
+    }
+    const key = `${config.id}:${config.defaultModel}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    sanitized.push(config);
+  }
+  return sanitized;
+}
+
 export const LlmProviderConfigSchema = z
   .object({
     id: ProviderIdSchema,
@@ -164,6 +223,29 @@ export const LlmProviderConfigSchema = z
     }
   });
 
+export const ImageProviderConfigSchema = z
+  .object({
+    id: ProviderIdSchema,
+    label: z.string().trim().min(1).max(80),
+    vendor: z.string().trim().min(1).max(80),
+    adapter: ImageProviderAdapterSchema,
+    baseUrl: z.string().trim().url().nullable().default(null),
+    defaultModel: z.string().trim().min(1).max(160),
+    enabled: z.boolean().default(true),
+    isBuiltin: z.boolean().default(false)
+  })
+  .superRefine((config, ctx) => {
+    if (config.adapter === "openai-image" && !config.baseUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["baseUrl"],
+        message: "图片 Provider 必须填写 baseURL"
+      });
+    }
+  });
+
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
 export type LlmProviderAdapter = z.infer<typeof LlmProviderAdapterSchema>;
+export type ImageProviderAdapter = z.infer<typeof ImageProviderAdapterSchema>;
 export type LlmProviderConfig = z.infer<typeof LlmProviderConfigSchema>;
+export type ImageProviderConfig = z.infer<typeof ImageProviderConfigSchema>;

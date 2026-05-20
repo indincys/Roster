@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ApiKeyPublicRecord, AppSettings } from "@roster/shared-types";
-import { DEFAULT_LLM_PROVIDER_CONFIGS } from "@roster/shared-types";
-import { configuredLlmModelsFromApiKeys } from "../../apps/desktop/renderer/src/lib/provider-options";
+import { DEFAULT_IMAGE_PROVIDER_CONFIGS, DEFAULT_LLM_PROVIDER_CONFIGS } from "@roster/shared-types";
+import { configuredImageModelsFromApiKeys, configuredLlmModelsFromApiKeys } from "../../apps/desktop/renderer/src/lib/provider-options";
 
 function makeSettings(configs: AppSettings["llmProviderConfigs"]): AppSettings {
   return {
@@ -17,6 +17,7 @@ function makeSettings(configs: AppSettings["llmProviderConfigs"]): AppSettings {
     providerRetryCount: 3,
     providerRetryBaseDelayMs: 1000,
     llmProviderConfigs: configs,
+    imageProviderConfigs: [...DEFAULT_IMAGE_PROVIDER_CONFIGS],
     monthlyBudgetWarningCents: 0,
     backupScope: "all",
     backupRetentionCount: 7,
@@ -28,6 +29,7 @@ function makeSettings(configs: AppSettings["llmProviderConfigs"]): AppSettings {
 function makeKey(input: Partial<ApiKeyPublicRecord> & Pick<ApiKeyPublicRecord, "provider" | "label">): ApiKeyPublicRecord {
   return {
     id: input.id ?? `${input.provider}-${input.label}`,
+    kind: input.kind ?? "text",
     provider: input.provider,
     label: input.label,
     model: input.model ?? null,
@@ -79,5 +81,36 @@ describe("configuredLlmModelsFromApiKeys", () => {
 
     expect(models).toEqual([expect.objectContaining({ provider: "deepseek", model: "deepseek-reasoner" })]);
     expect(models.map((model) => `${model.provider}/${model.model}`).join("\n")).not.toContain("sk-");
+  });
+
+  it("separates image API keys from text model options", () => {
+    const settings = makeSettings([
+      { ...DEFAULT_LLM_PROVIDER_CONFIGS.find((config) => config.id === "openai")!, enabled: true }
+    ]);
+
+    const textModels = configuredLlmModelsFromApiKeys(settings, [
+      makeKey({ kind: "image", provider: "openai", label: "OpenAI 图片 Key", model: "gpt-image-1.5", isDefault: true })
+    ]);
+
+    expect(textModels).toEqual([]);
+  });
+
+  it("exposes multiple image provider keys as separate generation targets", () => {
+    const settings = {
+      ...makeSettings([]),
+      imageProviderConfigs: [
+        { ...DEFAULT_IMAGE_PROVIDER_CONFIGS.find((config) => config.id === "mock")!, enabled: true },
+        { ...DEFAULT_IMAGE_PROVIDER_CONFIGS.find((config) => config.id === "openai")!, enabled: true }
+      ]
+    };
+
+    const imageModels = configuredImageModelsFromApiKeys(settings, [
+      makeKey({ id: "openai-image-a", kind: "image", provider: "openai", label: "OpenAI 图片 A", model: "gpt-image-1.5", isDefault: true }),
+      makeKey({ id: "openai-image-b", kind: "image", provider: "openai", label: "OpenAI 图片 B", model: "gpt-image-1", isDefault: false }),
+      makeKey({ kind: "text", provider: "openai", label: "OpenAI 文本", model: "gpt-5.4-mini" })
+    ]);
+
+    expect(imageModels.map((model) => model.apiKeyId)).toEqual([null, "openai-image-a", "openai-image-b"]);
+    expect(imageModels.map((model) => `${model.provider}/${model.model}`).join("\n")).not.toContain("gpt-5.4-mini");
   });
 });

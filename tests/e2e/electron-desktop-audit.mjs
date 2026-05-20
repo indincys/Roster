@@ -488,7 +488,6 @@ async function main() {
           setter.call(input, value);
           input.dispatchEvent(new Event("input", { bubbles: true }));
         };
-        setInput('[data-skill-id-input]', 'electron-title-skill');
         setInput('[data-skill-name-input]', 'Electron 标题 Skill');
         const editor = document.querySelector('[data-skill-content-editor]');
         const editorSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
@@ -498,13 +497,13 @@ async function main() {
       })()`
     );
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-skill-row="electron-title-skill"]') !== null`),
+      () => evaluate(client, `document.querySelector('[data-skill-row="title-01"]') !== null`),
       "Skill saved through real Skill Center UI",
       10_000
     );
     await evaluate(client, `document.querySelector('[data-toggle-skill-enabled]').click()`);
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-enabled-skill="electron-title-skill"]') !== null`),
+      () => evaluate(client, `document.querySelector('[data-enabled-skill="title-01"]') !== null`),
       "Skill enabled through real Skill Center UI",
       10_000
     );
@@ -518,7 +517,6 @@ async function main() {
           setter.call(input, value);
           input.dispatchEvent(new Event("input", { bubbles: true }));
         };
-        setInput('[data-skill-id-input]', 'electron-script-skill');
         setInput('[data-skill-name-input]', 'Electron 文案 Skill');
         const select = document.querySelector('[data-skill-type-select]');
         const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
@@ -532,11 +530,11 @@ async function main() {
       })()`
     );
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-skill-row="electron-script-skill"]') !== null`),
+      () => evaluate(client, `document.querySelector('[data-skill-row="script-01"]') !== null`),
       "script Skill saved through real Skill Center UI",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-skill-row="electron-script-skill"]').click()`);
+    await evaluate(client, `document.querySelector('[data-skill-row="script-01"]').click()`);
     await waitFor(
       () => evaluate(client, `document.querySelector('[data-toggle-skill-enabled]') !== null && document.body.innerText.includes("Electron 文案 Skill")`),
       "script Skill selected in real Skill Center UI",
@@ -544,7 +542,7 @@ async function main() {
     );
     await evaluate(client, `document.querySelector('[data-toggle-skill-enabled]').click()`);
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-enabled-skill="electron-script-skill"]') !== null`),
+      () => evaluate(client, `document.querySelector('[data-enabled-skill="script-01"]') !== null`),
       "script Skill enabled through real Skill Center UI",
       10_000
     );
@@ -558,7 +556,6 @@ async function main() {
           setter.call(input, value);
           input.dispatchEvent(new Event("input", { bubbles: true }));
         };
-        setInput('[data-skill-id-input]', 'electron-image-prompt-skill');
         setInput('[data-skill-name-input]', 'Electron 图片提示词 Skill');
         const select = document.querySelector('[data-skill-type-select]');
         const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
@@ -572,11 +569,11 @@ async function main() {
       })()`
     );
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-skill-row="electron-image-prompt-skill"]') !== null`),
+      () => evaluate(client, `document.querySelector('[data-skill-row="image-prompt-01"]') !== null`),
       "image prompt Skill saved through real Skill Center UI",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-skill-row="electron-image-prompt-skill"]').click()`);
+    await evaluate(client, `document.querySelector('[data-skill-row="image-prompt-01"]').click()`);
     await waitFor(
       () => evaluate(client, `document.querySelector('[data-toggle-skill-enabled]') !== null && document.body.innerText.includes("Electron 图片提示词 Skill")`),
       "image prompt Skill selected in real Skill Center UI",
@@ -584,22 +581,22 @@ async function main() {
     );
     await evaluate(client, `document.querySelector('[data-toggle-skill-enabled]').click()`);
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-enabled-skill="electron-image-prompt-skill"]') !== null`),
+      () => evaluate(client, `document.querySelector('[data-enabled-skill="image-prompt-01"]') !== null`),
       "image prompt Skill enabled through real Skill Center UI",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-skill-row="electron-title-skill"]').click()`);
+    await evaluate(client, `document.querySelector('[data-skill-row="title-01"]').click()`);
     await waitFor(
-      () => evaluate(client, `document.body.innerText.includes("Electron 标题 Skill") && document.querySelector('[data-skill-row="electron-title-skill"]') !== null`),
+      () => evaluate(client, `document.body.innerText.includes("Electron 标题 Skill") && document.querySelector('[data-skill-row="title-01"]') !== null`),
       "title Skill reselected after script Skill setup",
       10_000
     );
-    const skillRoot = path.join(userDataDir, "skills", "user", "electron-title-skill");
+    const skillRoot = path.join(userDataDir, "skills", "user", "title-01");
     assert(existsSync(path.join(skillRoot, "meta.json")), "Skill meta.json missing after UI save");
     assert(existsSync(path.join(skillRoot, "SKILL.md")), "Skill SKILL.md missing after UI save");
     const activationJson = JSON.parse(await readFile(path.join(workspaceRoot, "skills_config", "activation.json"), "utf8"));
     assert(
-      activationJson.enabledSkillIds.includes("electron-title-skill"),
+      activationJson.enabledSkillIds.includes("title-01"),
       "Skill activation file did not include UI-enabled Skill"
     );
 
@@ -875,7 +872,7 @@ async function main() {
       "market-installed official Skill appears in Skill Center",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-skill-row="electron-title-skill"]').click()`);
+    await evaluate(client, `document.querySelector('[data-skill-row="title-01"]').click()`);
     await waitFor(
       () => evaluate(client, `document.body.innerText.includes("Electron 标题 Skill") && !document.querySelector('[data-save-skill]').disabled`),
       "editable title Skill selected after market install",
@@ -921,11 +918,11 @@ async function main() {
     await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'dashboard' })");
     await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'skills' })");
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-skill-row="electron-title-skill"]') !== null`),
+      () => evaluate(client, `document.querySelector('[data-skill-row="title-01"]') !== null`),
       "title Skill available before include file tree check",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-skill-row="electron-title-skill"]').click()`);
+    await evaluate(client, `document.querySelector('[data-skill-row="title-01"]').click()`);
     await waitFor(
       () =>
         evaluate(
@@ -1016,6 +1013,8 @@ async function main() {
     await evaluate(
       client,
       `(() => {
+        const fast = document.querySelector('button[data-title-model="mock:mock-title-fast"]');
+        if (fast && !fast.className.includes("bg-blue-50")) fast.click();
         const balanced = document.querySelector('button[data-title-model="mock:mock-title-balanced"]');
         if (balanced?.className.includes("bg-blue-50")) balanced.click();
       })()`
@@ -1057,6 +1056,8 @@ async function main() {
     await evaluate(
       client,
       `(() => {
+        const fast = document.querySelector('button[data-title-model="mock:mock-title-fast"]');
+        if (fast && !fast.className.includes("bg-blue-50")) fast.click();
         const balanced = document.querySelector('button[data-title-model="mock:mock-title-balanced"]');
         if (balanced && !balanced.className.includes("bg-blue-50")) balanced.click();
       })()`
@@ -1145,7 +1146,7 @@ async function main() {
     );
     const savedGeneratedTitles = await evaluate(client, `window.roster.listTitles()`);
     assert(
-      savedGeneratedTitles.filter((title) => title.sourceSkillId === "electron-title-skill").length >= 3,
+      savedGeneratedTitles.filter((title) => title.sourceSkillId === "title-01").length >= 3,
       "title workspace did not persist selected generated titles"
     );
 
@@ -1165,7 +1166,7 @@ async function main() {
       () =>
         evaluate(
           client,
-          `document.querySelector('[data-image-prompt-skill-select]')?.value === "electron-image-prompt-skill" && document.body.innerText.includes("Electron 图片提示词 Skill")`
+          `document.querySelector('[data-image-prompt-skill-select]')?.value === "image-prompt-01" && document.body.innerText.includes("Electron 图片提示词 Skill")`
         ),
       "enabled image prompt Skill appears in Image Studio",
       10_000
@@ -1397,6 +1398,15 @@ async function main() {
       "real script workspace page",
       10_000
     );
+    await waitFor(
+      () =>
+        evaluate(
+          client,
+          `document.querySelector('button[data-script-model="mock:mock-script-fast"]') !== null && document.querySelector('button[data-script-model="mock:mock-script-balanced"]') !== null`
+        ),
+      "script workspace saved mock models visible",
+      10_000
+    );
     await evaluate(client, `document.querySelector('[data-create-script-schedule]').click()`);
     await waitFor(
       () => evaluate(client, `document.body.innerText.includes("已创建定时任务：文案生成定时")`),
@@ -1410,6 +1420,10 @@ async function main() {
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
         setter.call(input, 'SKU-2');
         input.dispatchEvent(new Event("input", { bubbles: true }));
+        const fast = document.querySelector('button[data-script-model="mock:mock-script-fast"]');
+        if (fast && !fast.className.includes("bg-blue-50")) fast.click();
+        const balanced = document.querySelector('button[data-script-model="mock:mock-script-balanced"]');
+        if (balanced && !balanced.className.includes("bg-blue-50")) balanced.click();
       })()`
     );
     await evaluate(client, `document.querySelector('[data-generate-scripts]').click()`);
@@ -1445,12 +1459,12 @@ async function main() {
       10_000
     );
     const savedGeneratedScripts = await evaluate(client, `window.roster.listScripts()`);
-    const electronScriptRows = savedGeneratedScripts.filter((script) => script.sourceSkillId === "electron-script-skill");
+    const electronScriptRows = savedGeneratedScripts.filter((script) => script.sourceSkillId === "script-01");
     assert(electronScriptRows.length >= 2, "script workspace did not persist selected generated scripts");
     assert(electronScriptRows.every((script) => script.skuCode === "SKU-2"), "script workspace did not persist optional SKU");
     const scriptDb = openWorkspaceDb();
     try {
-      const scriptSkuCount = scriptDb.prepare("SELECT COUNT(*) AS count FROM scripts WHERE source_skill_id = ? AND sku_code = ?").get("electron-script-skill", "SKU-2").count;
+      const scriptSkuCount = scriptDb.prepare("SELECT COUNT(*) AS count FROM scripts WHERE source_skill_id = ? AND sku_code = ?").get("script-01", "SKU-2").count;
       assert(scriptSkuCount >= 2, `expected at least two SKU-linked scripts, got ${scriptSkuCount}`);
     } finally {
       scriptDb.close();

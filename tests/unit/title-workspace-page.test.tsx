@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TitleWorkspacePage } from "../../apps/desktop/renderer/src/pages/TitleWorkspacePage";
 import { useAppStore } from "../../apps/desktop/renderer/src/stores/app-store";
 import type { AppSettings, SkillRecord } from "@roster/shared-types";
-import { DEFAULT_LLM_PROVIDER_CONFIGS } from "@roster/shared-types";
+import { DEFAULT_IMAGE_PROVIDER_CONFIGS, DEFAULT_LLM_PROVIDER_CONFIGS } from "@roster/shared-types";
 
 function makeSettings(): AppSettings {
   return {
@@ -25,6 +25,7 @@ function makeSettings(): AppSettings {
       { ...DEFAULT_LLM_PROVIDER_CONFIGS.find((config) => config.id === "openai")!, enabled: true },
       { ...DEFAULT_LLM_PROVIDER_CONFIGS.find((config) => config.id === "deepseek")!, enabled: true }
     ],
+    imageProviderConfigs: [...DEFAULT_IMAGE_PROVIDER_CONFIGS],
     monthlyBudgetWarningCents: 0,
     backupScope: "all",
     backupRetentionCount: 7,
@@ -91,6 +92,7 @@ describe("TitleWorkspacePage provider model rendering", () => {
       listApiKeys: vi.fn(async () => [
         {
           id: "deepseek-key",
+          kind: "text",
           provider: "deepseek",
           label: "DeepSeek 主账号",
           model: "deepseek-chat",
@@ -100,6 +102,7 @@ describe("TitleWorkspacePage provider model rendering", () => {
         },
         {
           id: "leaked-key",
+          kind: "text",
           provider: "deepseek",
           label: "DeepSeek 错误配置",
           model: "sk-2576628c6e1f4a08805a22ab97050000",
@@ -131,6 +134,7 @@ describe("TitleWorkspacePage provider model rendering", () => {
       listApiKeys: vi.fn(async () => [
         {
           id: "deepseek-key",
+          kind: "text",
           provider: "deepseek",
           label: "DeepSeek 主账号",
           model: "deepseek-chat",

@@ -11,6 +11,8 @@ export default tseslint.config(
       "**/out/**",
       "**/node_modules/**",
       "**/coverage/**",
+      ".claude/**",
+      ".codex/**",
       "design/**",
       "postcss.config.cjs",
       "tailwind.config.cjs"

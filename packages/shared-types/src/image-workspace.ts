@@ -7,6 +7,14 @@ export const ImagePromptWorkspaceModelSchema = z.object({
   model: z.string().trim().min(1)
 });
 
+export const ImageWorkspaceProviderTargetSchema = z.object({
+  provider: ProviderIdSchema,
+  model: z.string().trim().min(1),
+  apiKeyId: z.string().trim().min(1).nullable().optional()
+});
+
+export const ImageWorkspaceGenerationStrategySchema = z.enum(["all_providers", "load_balance"]);
+
 export const ImageSceneOutputSubdirSchema = z.enum(["main", "detail", "live_cover"]);
 export const ImageSceneAspectRatioSchema = z.enum(["1:1", "3:4", "9:16", "16:9"]);
 
@@ -59,7 +67,10 @@ export const ImagePromptWorkspaceGenerateResultSchema = z.object({
 
 export const ImageWorkspaceGenerateInputSchema = z.object({
   promptIds: z.array(z.string().min(1)).min(1),
+  provider: ProviderIdSchema.optional(),
   model: z.string().trim().min(1).default("mock-image"),
+  targets: z.array(ImageWorkspaceProviderTargetSchema).optional().default([]),
+  generationStrategy: ImageWorkspaceGenerationStrategySchema.default("load_balance"),
   aspectRatio: ImageSceneAspectRatioSchema.default("1:1"),
   perPromptCount: z.number().int().min(1).max(8).default(1),
   outputSubdir: ImageSceneOutputSubdirSchema.default("main")
@@ -67,10 +78,14 @@ export const ImageWorkspaceGenerateInputSchema = z.object({
 
 export const ImageWorkspaceGenerateResultSchema = z.object({
   requested: z.number().int().nonnegative(),
-  savedImages: z.array(ImageLibraryItemSchema)
+  savedImages: z.array(ImageLibraryItemSchema),
+  failed: z.number().int().nonnegative().default(0),
+  errors: z.array(z.string()).default([])
 });
 
 export type ImagePromptWorkspaceModel = z.infer<typeof ImagePromptWorkspaceModelSchema>;
+export type ImageWorkspaceProviderTarget = z.infer<typeof ImageWorkspaceProviderTargetSchema>;
+export type ImageWorkspaceGenerationStrategy = z.infer<typeof ImageWorkspaceGenerationStrategySchema>;
 export type ImageSceneOutputSubdir = z.infer<typeof ImageSceneOutputSubdirSchema>;
 export type ImageSceneAspectRatio = z.infer<typeof ImageSceneAspectRatioSchema>;
 export type ImageScenePreset = z.infer<typeof ImageScenePresetSchema>;

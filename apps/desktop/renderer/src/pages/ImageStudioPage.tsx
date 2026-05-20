@@ -6,22 +6,20 @@ import type {
   ImageSceneAspectRatio,
   ImageSceneOutputSubdir,
   ImageScenePreset,
+  ImageWorkspaceGenerationStrategy,
+  ImageWorkspaceProviderTarget,
   PromptRecord,
   SkillRecord
 } from "@roster/shared-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { configuredLabeledLlmModelsFromApiKeys } from "@/lib/provider-options";
+import { configuredImageModelsFromApiKeys, configuredLabeledLlmModelsFromApiKeys, type ImageModelOption } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 
 type ImageStudioTab = "prompt" | "library" | "generate";
 
 const progressStorageKey = "roster:image-studio:generation-progress:v1";
-const imageModelOptions = [
-  { label: "Mock 本地", value: "mock-image" },
-  { label: "OpenAI GPT Image", value: "gpt-image-1.5" }
-] as const;
 const defaultTextModelOptions: Array<ImagePromptWorkspaceModel & { label: string }> = [
 ];
 const emptyPromptModel: ImagePromptWorkspaceModel = { provider: "mock", model: "" };
@@ -78,6 +76,18 @@ function writeStoredProgress(progress: ImageGenerationProgress): void {
   window.localStorage.setItem(progressStorageKey, JSON.stringify(progress));
 }
 
+function imageOptionKey(option: Pick<ImageModelOption, "provider" | "model" | "apiKeyId">): string {
+  return `${option.provider}:${option.model}:${option.apiKeyId ?? "default"}`;
+}
+
+function imageOptionToTarget(option: ImageModelOption): ImageWorkspaceProviderTarget {
+  return {
+    provider: option.provider,
+    model: option.model,
+    apiKeyId: option.apiKeyId
+  };
+}
+
 export function ImageStudioPage(): JSX.Element {
   const [tab, setTab] = useState<ImageStudioTab>("prompt");
   const [scenePresets, setScenePresets] = useState<ImageScenePreset[]>([]);
@@ -96,6 +106,9 @@ export function ImageStudioPage(): JSX.Element {
   const [selectedPromptIds, setSelectedPromptIds] = useState<Set<string>>(new Set());
   const [perPromptCount, setPerPromptCount] = useState(2);
   const [imageModel, setImageModel] = useState<string>("mock-image");
+  const [imageModelOptions, setImageModelOptions] = useState<ImageModelOption[]>([]);
+  const [selectedImageTargetKeys, setSelectedImageTargetKeys] = useState<Set<string>>(new Set());
+  const [generationStrategy, setGenerationStrategy] = useState<ImageWorkspaceGenerationStrategy>("load_balance");
   const [aspectRatio, setAspectRatio] = useState<ImageSceneAspectRatio>("1:1");
   const [outputSubdir, setOutputSubdir] = useState<ImageSceneOutputSubdir>("main");
   const [message, setMessage] = useState("");
@@ -108,6 +121,10 @@ export function ImageStudioPage(): JSX.Element {
   const selectedPrompts = useMemo(
     () => prompts.filter((prompt) => selectedPromptIds.has(prompt.id)),
     [prompts, selectedPromptIds]
+  );
+  const selectedImageOptions = useMemo(
+    () => imageModelOptions.filter((option) => selectedImageTargetKeys.has(imageOptionKey(option))),
+    [imageModelOptions, selectedImageTargetKeys]
   );
   const visibleImages = useMemo(
     () => images.filter((image) => showDeletedImages || image.status !== "soft_deleted"),
@@ -132,10 +149,20 @@ export function ImageStudioPage(): JSX.Element {
   useEffect(() => {
     Promise.all([window.roster.getSettings(), window.roster.listApiKeys()])
       .then(([loaded, apiKeys]) => {
-        const options = configuredLabeledLlmModelsFromApiKeys(loaded, apiKeys, { enableFirst: true });
+        const options = configuredLabeledLlmModelsFromApiKeys(loaded, apiKeys, {
+          enableFirst: true,
+          modelFilter: (option) => !option.model.includes("script")
+        });
         setTextModelOptions(options);
         if (options[0]) {
           setPromptModel({ provider: options[0].provider, model: options[0].model });
+        }
+        const imageOptions = configuredImageModelsFromApiKeys(loaded, apiKeys, { enableFirst: true });
+        setImageModelOptions(imageOptions);
+        const initiallyEnabled = imageOptions.filter((option) => option.enabled).map(imageOptionKey);
+        setSelectedImageTargetKeys(new Set(initiallyEnabled.length > 0 ? initiallyEnabled : imageOptions[0] ? [imageOptionKey(imageOptions[0])] : []));
+        if (imageOptions[0]) {
+          setImageModel(imageOptions[0].model);
         }
       })
       .catch(() => undefined);
@@ -171,10 +198,14 @@ export function ImageStudioPage(): JSX.Element {
     setPerPromptCount(selectedScenePreset.defaultPerPromptCount);
     setOutputSubdir(selectedScenePreset.defaultOutputSubdir);
     setImageModel(selectedScenePreset.defaultImageModel);
+    const presetOption = imageModelOptions.find((option) => option.model === selectedScenePreset.defaultImageModel);
+    if (presetOption) {
+      setSelectedImageTargetKeys(new Set([imageOptionKey(presetOption)]));
+    }
     if (selectedScenePreset.skillId) {
       setSelectedPromptSkillId(selectedScenePreset.skillId);
     }
-  }, [selectedScenePreset]);
+  }, [imageModelOptions, selectedScenePreset]);
 
   async function createScenePreset(): Promise<void> {
     const name = newSceneName.trim();
@@ -188,7 +219,7 @@ export function ImageStudioPage(): JSX.Element {
       defaultAspectRatio: aspectRatio,
       defaultPerPromptCount: perPromptCount,
       defaultOutputSubdir: outputSubdir,
-      defaultImageModel: imageModel
+      defaultImageModel: selectedImageOptions[0]?.model ?? imageModel
     });
     const presets = await window.roster.listImageScenePresets();
     setScenePresets(presets);
@@ -266,17 +297,41 @@ export function ImageStudioPage(): JSX.Element {
     setMessage(`已带入 ${selectedPromptIds.size} 条提示词`);
   }
 
+  function toggleImageTarget(option: ImageModelOption): void {
+    setSelectedImageTargetKeys((current) => {
+      const key = imageOptionKey(option);
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+    setImageModel(option.model);
+  }
+
+  function plannedImageRequestCount(promptCountForBatch: number, targetCount: number): number {
+    const providerMultiplier = generationStrategy === "all_providers" ? Math.max(targetCount, 1) : 1;
+    return promptCountForBatch * providerMultiplier * perPromptCount;
+  }
+
   async function runImageGenerationBatch(promptIds: string[], actionLabel = "生成"): Promise<void> {
     const uniquePromptIds = [...new Set(promptIds)].filter(Boolean);
     if (uniquePromptIds.length === 0) {
       setMessage("请先在提示词库选择提示词");
       return;
     }
+    if (selectedImageOptions.length === 0) {
+      setMessage("请先到设置页保存图片生成 API key，或启用 Mock 图片 Provider");
+      return;
+    }
     setGenerationRunning(true);
+    const targets = selectedImageOptions.map(imageOptionToTarget);
     const initialProgress: ImageGenerationProgress = {
       status: "running",
       promptIds: uniquePromptIds,
-      total: uniquePromptIds.length * perPromptCount,
+      total: plannedImageRequestCount(uniquePromptIds.length, targets.length),
       completed: 0,
       generatedImageIds: [],
       error: null,
@@ -285,23 +340,25 @@ export function ImageStudioPage(): JSX.Element {
     updateGenerationProgress(initialProgress);
     let nextProgress = initialProgress;
     try {
-      for (const promptId of uniquePromptIds) {
-        const result = await window.roster.generateImages({
-          promptIds: [promptId],
-          model: imageModel,
-          aspectRatio,
-          perPromptCount,
-          outputSubdir
-        });
-        nextProgress = {
-          ...nextProgress,
-          completed: nextProgress.completed + result.savedImages.length,
-          generatedImageIds: [...nextProgress.generatedImageIds, ...result.savedImages.map((image) => image.id)],
-          updatedAt: new Date().toISOString()
-        };
-        updateGenerationProgress(nextProgress);
-        await loadData();
-      }
+      const result = await window.roster.generateImages({
+        promptIds: uniquePromptIds,
+        provider: targets[0]?.provider,
+        model: targets[0]?.model ?? imageModel,
+        targets,
+        generationStrategy,
+        aspectRatio,
+        perPromptCount,
+        outputSubdir
+      });
+      nextProgress = {
+        ...nextProgress,
+        completed: result.savedImages.length,
+        generatedImageIds: result.savedImages.map((image) => image.id),
+        error: result.errors.length ? result.errors.join("；") : null,
+        updatedAt: new Date().toISOString()
+      };
+      updateGenerationProgress(nextProgress);
+      await loadData();
       const completedProgress = {
         ...nextProgress,
         status: "completed" as const,
@@ -309,7 +366,11 @@ export function ImageStudioPage(): JSX.Element {
       };
       updateGenerationProgress(completedProgress);
       setSelectedImageIds(new Set());
-      setMessage(`已${actionLabel}并入库 ${completedProgress.completed} 张图片`);
+      setMessage(
+        result.failed > 0
+          ? `已${actionLabel}并入库 ${completedProgress.completed} 张图片，${result.failed} 个 Provider 任务失败`
+          : `已${actionLabel}并入库 ${completedProgress.completed} 张图片`
+      );
     } catch (error) {
       const failedProgress = {
         ...nextProgress,
@@ -528,7 +589,7 @@ export function ImageStudioPage(): JSX.Element {
               <span>默认比例：{aspectRatio}</span>
               <span>每条张数：{perPromptCount}</span>
               <span>输出目录：images/{outputSubdir}</span>
-              <span>图片模型：{imageModel}</span>
+              <span>图片 Provider：{selectedImageOptions.length || imageModelOptions.length}</span>
             </div>
             <Button
               className="mt-4 w-full"
@@ -613,6 +674,10 @@ export function ImageStudioPage(): JSX.Element {
         <section className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)] gap-4">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 text-sm font-semibold">当前批次：{selectedPrompts.length} 条提示词</div>
+            <div className="mb-3 rounded-md border border-border bg-background p-3 text-xs leading-5 text-muted-foreground">
+              已选 Provider：{selectedImageOptions.length} 个；预计任务：
+              {plannedImageRequestCount(selectedPrompts.length, selectedImageOptions.length)} 张
+            </div>
             <Input
               label="每条生成张数"
               type="number"
@@ -623,20 +688,49 @@ export function ImageStudioPage(): JSX.Element {
               data-image-per-prompt
             />
             <label className="mt-3 flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-foreground">模型</span>
+              <span className="font-medium text-foreground">生成策略</span>
               <select
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
-                value={imageModel}
-                onChange={(event) => setImageModel(event.target.value as typeof imageModel)}
-                data-image-model
+                value={generationStrategy}
+                onChange={(event) => setGenerationStrategy(event.target.value as ImageWorkspaceGenerationStrategy)}
+                data-image-generation-strategy
               >
-                {imageModelOptions.map((model) => (
-                  <option key={model.value} value={model.value}>
-                    {model.label}
-                  </option>
-                ))}
+                <option value="load_balance">负载均衡：每条提示词只交给一个 Provider</option>
+                <option value="all_providers">同时生成：每条提示词交给全部 Provider</option>
               </select>
             </label>
+            <div className="mt-3 flex flex-col gap-2 text-sm" data-image-model>
+              <span className="font-medium text-foreground">图片 Provider / Key</span>
+              {imageModelOptions.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+                  请先到设置页保存图片生成大模型 API key。
+                </div>
+              ) : (
+                <div className="flex max-h-40 flex-col gap-2 overflow-y-auto">
+                  {imageModelOptions.map((option) => {
+                    const key = imageOptionKey(option);
+                    const checked = selectedImageTargetKeys.has(key);
+                    return (
+                      <button
+                        key={key}
+                        className={cn(
+                          "flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs",
+                          checked ? "border-blue-200 bg-blue-50 text-blue-800" : "border-border bg-background"
+                        )}
+                        type="button"
+                        onClick={() => toggleImageTarget(option)}
+                        data-image-model-option={key}
+                      >
+                        <span className="flex size-4 items-center justify-center rounded-sm border border-current">
+                          {checked ? <Check className="size-3" /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <label className="mt-3 flex flex-col gap-1.5 text-sm">
               <span className="font-medium text-foreground">比例</span>
               <select
@@ -665,7 +759,13 @@ export function ImageStudioPage(): JSX.Element {
                 <option value="live_cover">live_cover 封面素材</option>
               </select>
             </label>
-            <Button className="mt-4 w-full" variant="primary" onClick={generateImages} disabled={generationRunning} data-generate-images>
+            <Button
+              className="mt-4 w-full"
+              variant="primary"
+              onClick={generateImages}
+              disabled={generationRunning || selectedImageOptions.length === 0}
+              data-generate-images
+            >
               <ImageIcon />
               开始生成
             </Button>

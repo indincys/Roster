@@ -2,8 +2,10 @@ import { z } from "zod";
 import { ProviderIdSchema } from "./provider";
 
 export const ProviderKindSchema = ProviderIdSchema;
+export const ApiKeyKindSchema = z.enum(["text", "image"]);
 
 export const ApiKeySaveInputSchema = z.object({
+  kind: ApiKeyKindSchema.default("text"),
   provider: ProviderKindSchema,
   label: z.string().trim().min(1).default("默认凭证"),
   model: z.string().trim().min(1).max(160).nullable().optional(),
@@ -13,6 +15,7 @@ export const ApiKeySaveInputSchema = z.object({
 
 export const ApiKeyPublicRecordSchema = z.object({
   id: z.string(),
+  kind: ApiKeyKindSchema.default("text"),
   provider: ProviderKindSchema,
   label: z.string(),
   model: z.string().nullable(),
@@ -44,6 +47,7 @@ export const ApiKeyConnectionTestResultSchema = z.object({
 });
 
 export type ProviderKind = z.infer<typeof ProviderKindSchema>;
+export type ApiKeyKind = z.infer<typeof ApiKeyKindSchema>;
 export type ApiKeySaveInput = z.infer<typeof ApiKeySaveInputSchema>;
 export type ApiKeyPublicRecord = z.infer<typeof ApiKeyPublicRecordSchema>;
 export type ApiKeyStorageAudit = z.infer<typeof ApiKeyStorageAuditSchema>;

@@ -49,6 +49,13 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_provider_model ON api_keys(provider, mod
 CREATE INDEX IF NOT EXISTS idx_api_keys_provider_default ON api_keys(provider, is_default);
 `;
 
+export const CONFIG_API_KEY_KIND_SQL = `
+ALTER TABLE api_keys ADD COLUMN kind TEXT NOT NULL DEFAULT 'text';
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_kind_provider_model ON api_keys(kind, provider, model);
+CREATE INDEX IF NOT EXISTS idx_api_keys_kind_provider_default ON api_keys(kind, provider, is_default);
+`;
+
 export const WORKSPACE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   id TEXT PRIMARY KEY,
@@ -418,6 +425,10 @@ export const CONFIG_MIGRATIONS: SqlMigration[] = [
   {
     id: "0002_api_key_model_metadata",
     sql: CONFIG_API_KEY_MODEL_METADATA_SQL
+  },
+  {
+    id: "0003_api_key_kind",
+    sql: CONFIG_API_KEY_KIND_SQL
   }
 ];
 

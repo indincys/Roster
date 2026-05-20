@@ -57,7 +57,12 @@ export function ScriptWorkspacePage(): JSX.Element {
   useEffect(() => {
     Promise.all([window.roster.getSettings(), window.roster.listApiKeys()])
       .then(([loaded, apiKeys]) => {
-        setModels(configuredLlmModelsFromApiKeys(loaded, apiKeys, { enableFirst: true }) as ModelOption[]);
+        setModels(
+          configuredLlmModelsFromApiKeys(loaded, apiKeys, {
+            enableFirst: true,
+            modelFilter: (option) => option.provider !== "mock" || option.model.includes("script")
+          }) as ModelOption[]
+        );
       })
       .catch(() => undefined);
   }, []);
