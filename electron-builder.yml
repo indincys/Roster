@@ -21,6 +21,7 @@ extraResources:
 mac:
   artifactName: "Roster-${version}-${arch}.${ext}"
   identity: YourApp Self-Signed
+  forceCodeSigning: true
   target:
     - target: dmg
       arch:
