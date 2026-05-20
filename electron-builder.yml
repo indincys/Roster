@@ -1,6 +1,7 @@
 appId: com.roster.shortvideo.workbench
 productName: 短视频运营工作台
 asar: true
+npmRebuild: false
 asarUnpack:
   - "**/*.node"
   - "resources/ffmpeg/**"
