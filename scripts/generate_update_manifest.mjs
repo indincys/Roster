@@ -9,7 +9,9 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const desktopPackagePath = path.join(repoRoot, "apps", "desktop", "package.json");
-const releaseDir = path.join(repoRoot, "apps", "desktop", "release");
+const releaseDir = process.env.RELEASE_DIR
+  ? path.resolve(process.env.RELEASE_DIR)
+  : path.join(repoRoot, "apps", "desktop", "release");
 const outputPath = process.env.OUTPUT_PATH
   ? path.resolve(process.env.OUTPUT_PATH)
   : path.join(releaseDir, "latest.json");
@@ -22,6 +24,7 @@ function usage() {
     "  DOWNLOAD_URL_PREFIX=https://example.com/releases/v0.1.0 node scripts/generate_update_manifest.mjs",
     "",
     "Environment:",
+    "  RELEASE_DIR          Optional artifact input directory. Defaults to apps/desktop/release.",
     "  DOWNLOAD_URL_PREFIX  Base URL used for artifact download URLs.",
     "  RELEASE_NOTES        Optional release notes text.",
     "  OUTPUT_PATH          Optional manifest output path. Defaults to apps/desktop/release/latest.json."

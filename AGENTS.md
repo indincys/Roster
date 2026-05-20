@@ -187,12 +187,7 @@ npm run test:e2e:electron
 npm run test:performance:electron
 ```
 
-发布验证：
-
-```bash
-npm run release:verify
-npm run release:verify:strict
-```
+发布验证命令和公开发布门禁见 `Release Gates`。
 
 测试规则：
 
@@ -276,11 +271,10 @@ npm run release:verify:strict
 - GitHub Actions secrets `CSC_LINK` 和 `CSC_KEY_PASSWORD` 已配置。
 - ffmpeg/ffprobe redistributable binaries 已按平台随包，来源和 license review 见 `tools/ffmpeg/README.md`。
 
-2026-05-20 更新链路排查发现：`gh release list --repo indincys/Roster` 当前未返回 published release，`git ls-remote --tags origin` 当前未返回远端 tag。即使本地或 CI 已生成 artifacts，只要 GitHub 上没有 published Release 和对应更新元数据，macOS / Windows 已安装客户端都无法通过 `electron-updater` 检测到远端更新。该状态后续发版后必须重新检查并更新。
+2026-05-20 更新链路排查结论：即使本地或 CI 已生成 artifacts，只要 GitHub 上没有 published Release 和对应更新元数据，macOS / Windows 已安装客户端都无法通过 `electron-updater` 检测到远端更新。后续每次发版都必须重新检查远端 tag、published Release 和更新资产。
 
 当前已知 release blockers：
 
-- GitHub 上尚未确认 published Release + `v{version}` tag + 可公开访问的 auto-update assets。
 - 真实 API key + 网络环境下的 live paid-provider success 验收。
 
 ## Implementation Discipline
