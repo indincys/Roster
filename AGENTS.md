@@ -240,35 +240,33 @@ Provider live 验收当前暂缓。设置页已支持自定义文本 LLM Provide
 
 发布、签名、打包和自动更新约束以 `RELEASE_POLICY.md` 为准。若旧审计文档仍提到 Apple Developer ID、notarization、Windows 签名或跨架构发布要求，与 `RELEASE_POLICY.md` 冲突时一律按 `RELEASE_POLICY.md` 执行。
 
-当前发布策略：
+发布仓库固定为 `indincys/Roster` / `https://github.com/indincys/Roster.git`。应用内更新必须走 `electron-updater` + published GitHub Release，不跳转 GitHub 让用户手动下载。
 
-- macOS 仅支持 Apple Silicon (`arm64`)。
-- Windows 仅支持 Windows 10/11 `x64`。
-- macOS 使用本机钥匙串自签名证书 `YourApp Self-Signed`，不使用 Apple Developer ID，不做 notarization。
-- Windows 不签名，不使用自签名证书。
-- 发布渠道为 GitHub Releases。
-- 打包使用 `electron-builder`，自动更新使用 `electron-updater`。
-- macOS 分发目标必须包含 DMG + ZIP；ZIP 是 auto-update 必需产物。
-- Windows 主分发目标为 NSIS x64，`perMachine` 必须为 `false`。
-- 应用内更新由右上角提醒图标触发下载和安装，不跳转 GitHub 让用户手动下载。
+用户说“发版”时，默认含义是完整执行应用内自动更新发布链路，而不是只构建本地产物：
 
-本地结构检查：
+1. 根据变更选择下一个正式 semver 版本号，更新根 `package.json`、`apps/desktop/package.json` 和 `package-lock.json`。
+2. 运行适用质量门和发布门禁，至少包括 `npm run typecheck`、`npm run lint`、`npm test`、`npm run test:integration`、`npm run build`、`npm run release:verify`；公开发布前必须处理 `npm run release:verify:strict` 的阻塞项。
+3. 构建 macOS arm64 DMG + ZIP 和 Windows x64 NSIS 安装包，确认 `latest-mac.yml` 指向 ZIP，`latest.yml` 指向 Windows `.exe`，并随 release 上传对应 blockmap。
+4. 提交版本变更，创建并推送 `v{version}` tag 到 `origin`。
+5. 在 GitHub Releases 上创建或更新 `v{version}` Release，上传 macOS、Windows 和更新元数据资产，并发布为 published release。Draft release、GitHub Actions artifact 或本地 `apps/desktop/release/` 产物都不等于客户端可检测更新。
+6. 发布后验证 `gh release view v{version} --repo indincys/Roster` 可见，Release 资产无需客户端 token 可访问，旧版 macOS 和 Windows 已安装应用能检测、下载、校验、安装并重启到新版本。
+
+应用内更新链路排查优先检查：
+
+- 远端是否存在 published GitHub Release；`gh release list --repo indincys/Roster` 为空时，客户端不会发现更新。
+- 远端是否存在对应 `v{version}` tag，且新版本号严格大于本地已安装版本。
+- Release 是否不是 draft、不是 prerelease。
+- Release 资产是否包含 macOS `.dmg`、`.zip`、`latest-mac.yml`、Windows `.exe`、`.exe.blockmap`、`latest.yml`。
+- `latest-mac.yml` / `latest.yml` 中的 `path`、`files[].url`、`sha512`、`size` 是否与上传资产一致。
+- 打包产物内是否包含 `app-update.yml`，且 owner/repo 指向 `indincys/Roster`。
+- macOS 端是否仍使用同一个 `YourApp Self-Signed` identity，Windows 端是否仍是 per-user NSIS (`perMachine: false`)。
+
+发布验证：
 
 ```bash
 npm run release:verify
-```
-
-公开发布就绪门禁：
-
-```bash
 npm run release:verify:strict
 ```
-
-`npm run release:verify` 通过只代表本地结构检查通过。
-
-`npm run release:verify:strict` 通过才代表公开发布检查通过。
-
-当前发布任务按 `PLAN.md` 的 `Remaining Release Tasks` 执行。
 
 当前已完成的发布外部项：
 
@@ -276,10 +274,14 @@ npm run release:verify:strict
 - macOS codesigning identity `YourApp Self-Signed` 已在本机钥匙串中可用。
 - 加密 `.p12` 备份位于仓库外 `~/.roster/release/YourApp-Self-Signed.p12`，密码保存在本机钥匙串条目 `Roster YourApp Self-Signed p12 password`。
 - GitHub Actions secrets `CSC_LINK` 和 `CSC_KEY_PASSWORD` 已配置。
-- macOS signed artifacts、Windows unsigned x64 NSIS artifacts、`latest-mac.yml`、`latest.yml`、`latest.json` 已生成并通过普通 release verifier。
 - ffmpeg/ffprobe redistributable binaries 已按平台随包，来源和 license review 见 `tools/ffmpeg/README.md`。
 
-当前唯一剩余 release blocker 是真实 API key + 网络环境下的 live paid-provider success 验收。
+2026-05-20 更新链路排查发现：`gh release list --repo indincys/Roster` 当前未返回 published release，`git ls-remote --tags origin` 当前未返回远端 tag。即使本地或 CI 已生成 artifacts，只要 GitHub 上没有 published Release 和对应更新元数据，macOS / Windows 已安装客户端都无法通过 `electron-updater` 检测到远端更新。该状态后续发版后必须重新检查并更新。
+
+当前已知 release blockers：
+
+- GitHub 上尚未确认 published Release + `v{version}` tag + 可公开访问的 auto-update assets。
+- 真实 API key + 网络环境下的 live paid-provider success 验收。
 
 ## Implementation Discipline
 
