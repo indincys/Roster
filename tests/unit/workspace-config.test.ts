@@ -84,6 +84,68 @@ describe("ConfigDatabase workspace lifecycle", () => {
     reopened.close();
   });
 
+  it("updates workspace metadata, allows empty RPA paths, and deletes only the saved workspace record", async () => {
+    const userDataPath = await makeTempRoot("roster-user-data-");
+    const parent = await makeTempRoot("roster-workspaces-");
+    const db = await ConfigDatabase.open(userDataPath);
+    const initialRoot = path.join(parent, "A");
+    const nextRoot = path.join(parent, "A-renamed");
+
+    const state = await db.createWorkspace({
+      name: "品牌 A",
+      rootPath: initialRoot,
+      macRootPath: initialRoot,
+      winRootPath: ""
+    });
+    const workspaceId = state.activeWorkspaceId;
+    if (!workspaceId) {
+      throw new Error("workspace id missing");
+    }
+    expect(state.workspaces[0]?.winRootPath).toBe("");
+
+    const updated = await db.updateWorkspace({
+      workspaceId,
+      name: "品牌 A 更新",
+      rootPath: nextRoot,
+      macRootPath: nextRoot,
+      winRootPath: "D:/CloudSync/A"
+    });
+    expect(updated.workspaces.find((workspace) => workspace.id === workspaceId)).toMatchObject({
+      name: "品牌 A 更新",
+      rootPath: nextRoot,
+      winRootPath: "D:\\CloudSync\\A"
+    });
+    await expect(stat(path.join(nextRoot, "workspace.db"))).resolves.toBeTruthy();
+
+    const deleted = db.deleteWorkspace({ workspaceId });
+    expect(deleted.activeWorkspaceId).toBeNull();
+    expect(deleted.workspaces).toEqual([]);
+    await expect(stat(path.join(nextRoot, "workspace.db"))).resolves.toBeTruthy();
+    db.close();
+  });
+
+  it("validates workspace path syntax before persistence", async () => {
+    const userDataPath = await makeTempRoot("roster-user-data-");
+    const db = await ConfigDatabase.open(userDataPath);
+
+    expect(
+      db.validateWorkspacePaths({
+        rootPath: "/Users/name/CloudSync/品牌A",
+        macRootPath: "/Users/name/CloudSync/品牌A",
+        winRootPath: "D:/CloudSync/品牌A"
+      })
+    ).toMatchObject({ ok: true, normalized: { winRootPath: "D:\\CloudSync\\品牌A" } });
+    expect(
+      db.validateWorkspacePaths({
+        rootPath: "/Users/name/CloudSync/品牌A",
+        macRootPath: "/Users/name/CloudSync/品牌A",
+        winRootPath: "CloudSync/品牌A",
+        requireRpaPath: true
+      })
+    ).toMatchObject({ ok: false });
+    db.close();
+  });
+
   it("encrypts API keys so plaintext is not present in config.db", async () => {
     const userDataPath = await makeTempRoot("roster-user-data-");
     const db = await ConfigDatabase.open(userDataPath);
@@ -105,6 +167,32 @@ describe("ConfigDatabase workspace lifecycle", () => {
     const configDbBytes = await readFile(path.join(userDataPath, "config.db"));
     expect(configDbBytes.toString("latin1")).not.toContain(apiKey);
     await expect(db.auditApiKeyStorage()).resolves.toMatchObject({ plaintextFound: false });
+    db.close();
+  });
+
+  it("updates existing API key metadata and can keep the encrypted key when key text is omitted", async () => {
+    const userDataPath = await makeTempRoot("roster-user-data-");
+    const db = await ConfigDatabase.open(userDataPath);
+    const apiKey = "sk-test-secret-value-1234567890";
+
+    const saved = await db.saveApiKey({
+      provider: "openai",
+      label: "测试 Key",
+      model: "gpt-5.4-mini",
+      isDefault: true,
+      apiKey
+    });
+    const updated = await db.saveApiKey({
+      apiKeyId: saved.id,
+      provider: "openai",
+      label: "测试 Key 更新",
+      model: "gpt-5.4",
+      isDefault: true
+    });
+    expect(updated.id).toBe(saved.id);
+    expect(updated).toMatchObject({ label: "测试 Key 更新", model: "gpt-5.4" });
+    await expect(db.getApiKeySecret(saved.id)).resolves.toMatchObject({ apiKey });
+    expect(db.listApiKeys()).toHaveLength(1);
     db.close();
   });
 

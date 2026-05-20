@@ -67,6 +67,9 @@ import {
   WorkspaceBackupInputSchema,
   WorkspaceRestoreInputSchema,
   WorkspaceCreateInputSchema,
+  WorkspaceDeleteInputSchema,
+  WorkspacePathValidationInputSchema,
+  WorkspaceUpdateInputSchema,
   type ApiCallProvider,
   type ApiCallWorkflow,
   type ApiKeyKind,
@@ -770,31 +773,50 @@ function installSoftwareUpdate(): SoftwareUpdateInstallResult {
   return { initiated: true };
 }
 
-async function listProviderModels(kind: ApiKeyKind, provider: string, apiKey: string): Promise<string[]> {
+async function listProviderModels(
+  kind: ApiKeyKind,
+  provider: string,
+  apiKey: string,
+  providerConfig?: LlmProviderConfig | ImageProviderConfig
+): Promise<string[]> {
+  const config = findProviderConfigForTest({ kind, provider, providerConfig });
   if (kind === "image") {
-    const config = getImageProviderConfig(provider);
-    const imageProvider = config ? createImageProviderFromConfig(config, apiKey) : null;
+    const imageProvider = config ? createImageProviderFromConfig(config as ImageProviderConfig, apiKey) : null;
     if (!imageProvider) {
       throw new Error("UnsupportedProvider");
     }
     return imageProvider.listModels();
   }
-  const config = getLlmProviderConfig(provider);
-  const llmProvider = config ? createLlmProviderFromConfig(config, apiKey) : null;
+  const llmProvider = config ? createLlmProviderFromConfig(config as LlmProviderConfig, apiKey) : null;
   if (!llmProvider) {
     throw new Error("UnsupportedProvider");
   }
   return llmProvider.listModels();
 }
 
-async function testApiKeyConnection(apiKeyId: string): Promise<ApiKeyConnectionTestResult> {
+async function testApiKeyConnection(input: z.infer<typeof ApiKeyConnectionTestInputSchema>): Promise<ApiKeyConnectionTestResult> {
   const checkedAt = new Date().toISOString();
+  let apiKeyId: string | null = input.apiKeyId ?? null;
+  let provider = input.provider ?? "mock";
+  let kind: ApiKeyKind = input.kind ?? "text";
   try {
-    const { record, apiKey } = await getConfigDb().getApiKeySecret(apiKeyId);
-    const models = redactModels(await listProviderModels(record.kind, record.provider, apiKey));
+    let apiKey = input.apiKey ?? "";
+    if (input.apiKeyId) {
+      const secret = await getConfigDb().getApiKeySecret(input.apiKeyId);
+      apiKeyId = secret.record.id;
+      provider = secret.record.provider;
+      kind = secret.record.kind;
+      apiKey = secret.apiKey;
+    } else {
+      provider = input.provider ?? "mock";
+      kind = input.kind ?? "text";
+      apiKey = input.apiKey ?? "";
+    }
+    const models = redactModels(await listProviderModels(kind, provider, apiKey, input.providerConfig));
     return {
       apiKeyId,
-      provider: record.provider,
+      provider,
+      kind,
       ok: true,
       checkedAt,
       models,
@@ -805,10 +827,11 @@ async function testApiKeyConnection(apiKeyId: string): Promise<ApiKeyConnectionT
   } catch (error) {
     const maybeStatus = typeof error === "object" && error && "status" in error ? Number((error as { status?: unknown }).status) : 0;
     const message = error instanceof Error ? error.message : String(error);
-    const apiKey = getConfigDb().listApiKeys().find((candidate) => candidate.id === apiKeyId);
+    const savedKey = apiKeyId ? getConfigDb().listApiKeys().find((candidate) => candidate.id === apiKeyId) : null;
     return {
       apiKeyId,
-      provider: apiKey?.provider ?? "mock",
+      provider: savedKey?.provider ?? provider,
+      kind: savedKey?.kind ?? kind,
       ok: false,
       checkedAt,
       models: [],
@@ -1061,6 +1084,17 @@ function getLlmProviderConfig(provider: string): LlmProviderConfig | null {
 
 function getImageProviderConfig(provider: string): ImageProviderConfig | null {
   return getConfigDb().getSettings().imageProviderConfigs.find((config) => config.id === provider && config.enabled) ?? null;
+}
+
+function findProviderConfigForTest(input: {
+  kind: ApiKeyKind;
+  provider: string;
+  providerConfig?: LlmProviderConfig | ImageProviderConfig;
+}): LlmProviderConfig | ImageProviderConfig | null {
+  if (input.providerConfig?.id === input.provider && input.providerConfig.enabled) {
+    return input.providerConfig;
+  }
+  return input.kind === "image" ? getImageProviderConfig(input.provider) : getLlmProviderConfig(input.provider);
 }
 
 function createLlmProviderFromConfig(config: LlmProviderConfig, apiKey?: string): LLMProvider | null {
@@ -1617,6 +1651,16 @@ function registerIpcHandlers(): void {
     return getConfigDb().createWorkspace(input);
   });
 
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_UPDATE, async (_event, payload: unknown) => {
+    const input = WorkspaceUpdateInputSchema.parse(payload);
+    return getConfigDb().updateWorkspace(input);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_DELETE, async (_event, payload: unknown) => {
+    const input = WorkspaceDeleteInputSchema.parse(payload);
+    return getConfigDb().deleteWorkspace(input);
+  });
+
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_SWITCH, async (_event, payload: unknown) => {
     const input = z.object({ workspaceId: z.string().min(1) }).parse(payload);
     return getConfigDb().switchWorkspace(input.workspaceId);
@@ -1631,6 +1675,10 @@ function registerIpcHandlers(): void {
       canceled: result.canceled,
       path: result.filePaths[0] ?? null
     };
+  });
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_VALIDATE_PATHS, async (_event, payload: unknown) => {
+    const input = WorkspacePathValidationInputSchema.parse(payload);
+    return getConfigDb().validateWorkspacePaths(input);
   });
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_CHECK_CLOUD_SYNC, async () => checkWorkspaceCloudSync());
 
@@ -2590,14 +2638,33 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.SECRETS_SAVE_API_KEY, async (_event, payload: unknown) => {
     const input = ApiKeySaveInputSchema.parse(payload);
-    return getConfigDb().saveApiKey(input);
+    let connectionTest: ApiKeyConnectionTestResult;
+    if (input.apiKey) {
+      connectionTest = await testApiKeyConnection(input);
+    } else if (input.apiKeyId) {
+      const { record, apiKey } = await getConfigDb().getApiKeySecret(input.apiKeyId);
+      connectionTest = await testApiKeyConnection({
+        kind: input.kind ?? record.kind,
+        provider: input.provider,
+        model: input.model ?? record.model,
+        apiKey,
+        providerConfig: input.providerConfig
+      });
+    } else {
+      connectionTest = await testApiKeyConnection(input);
+    }
+    if (!connectionTest.ok) {
+      throw new Error(`API 连通性测试失败：${connectionTest.errorCode ?? "ProviderError"}${connectionTest.errorMessage ? ` - ${connectionTest.errorMessage}` : ""}`);
+    }
+    const saved = await getConfigDb().saveApiKey(input);
+    return saved;
   });
 
   ipcMain.handle(IPC_CHANNELS.SECRETS_LIST_API_KEYS, async () => getConfigDb().listApiKeys());
   ipcMain.handle(IPC_CHANNELS.SECRETS_AUDIT_STORAGE, async () => getConfigDb().auditApiKeyStorage());
   ipcMain.handle(IPC_CHANNELS.SECRETS_TEST_API_KEY, async (_event, payload: unknown) => {
     const input = ApiKeyConnectionTestInputSchema.parse(payload);
-    return testApiKeyConnection(input.apiKeyId);
+    return testApiKeyConnection(input);
   });
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, async () => getConfigDb().getSettings());
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SAVE, async (_event, payload: unknown) => {

@@ -4,15 +4,44 @@ export const WorkspaceIdSchema = z.string().min(1);
 
 export const WorkspacePathMappingSchema = z.object({
   macRootPath: z.string().min(1, "Mac 根路径不能为空"),
-  winRootPath: z.string().min(1, "Windows 根路径不能为空")
+  winRootPath: z.string().trim().default("")
 });
 
 export const WorkspaceCreateInputSchema = z.object({
   name: z.string().trim().min(1, "工作空间名称不能为空"),
   rootPath: z.string().min(1, "工作空间根目录不能为空"),
   macRootPath: z.string().min(1, "Mac 根路径不能为空"),
-  winRootPath: z.string().min(1, "Windows 根路径不能为空"),
+  winRootPath: z.string().trim().default(""),
   copySkillConfigFromWorkspaceId: z.string().optional()
+});
+
+export const WorkspaceUpdateInputSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+  name: z.string().trim().min(1, "工作空间名称不能为空"),
+  rootPath: z.string().min(1, "工作空间根目录不能为空"),
+  macRootPath: z.string().min(1, "Mac 根路径不能为空"),
+  winRootPath: z.string().trim().default("")
+});
+
+export const WorkspaceDeleteInputSchema = z.object({
+  workspaceId: WorkspaceIdSchema
+});
+
+export const WorkspacePathValidationInputSchema = z.object({
+  rootPath: z.string().trim().optional().default(""),
+  macRootPath: z.string().trim().optional().default(""),
+  winRootPath: z.string().trim().optional().default(""),
+  requireRpaPath: z.boolean().optional().default(false)
+});
+
+export const WorkspacePathValidationResultSchema = z.object({
+  ok: z.boolean(),
+  errors: z.array(z.string()),
+  normalized: z.object({
+    rootPath: z.string(),
+    macRootPath: z.string(),
+    winRootPath: z.string()
+  })
 });
 
 export const WorkspaceRecordSchema = z.object({
@@ -46,6 +75,10 @@ export const WorkspaceCloudSyncCheckResultSchema = z.object({
 
 export type WorkspacePathMapping = z.infer<typeof WorkspacePathMappingSchema>;
 export type WorkspaceCreateInput = z.infer<typeof WorkspaceCreateInputSchema>;
+export type WorkspaceUpdateInput = z.infer<typeof WorkspaceUpdateInputSchema>;
+export type WorkspaceDeleteInput = z.infer<typeof WorkspaceDeleteInputSchema>;
+export type WorkspacePathValidationInput = z.input<typeof WorkspacePathValidationInputSchema>;
+export type WorkspacePathValidationResult = z.infer<typeof WorkspacePathValidationResultSchema>;
 export type WorkspaceRecord = z.infer<typeof WorkspaceRecordSchema>;
 export type WorkspaceRuntimeState = z.infer<typeof WorkspaceRuntimeStateSchema>;
 export type WorkspaceCloudSyncCheckResult = z.infer<typeof WorkspaceCloudSyncCheckResultSchema>;

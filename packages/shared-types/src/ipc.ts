@@ -109,13 +109,24 @@ import type {
   VideoScanSummary,
   VideoUpdateInput
 } from "./video";
-import type { WorkspaceCloudSyncCheckResult, WorkspaceCreateInput, WorkspaceRuntimeState } from "./workspace";
+import type {
+  WorkspaceCloudSyncCheckResult,
+  WorkspaceCreateInput,
+  WorkspaceDeleteInput,
+  WorkspacePathValidationInput,
+  WorkspacePathValidationResult,
+  WorkspaceRuntimeState,
+  WorkspaceUpdateInput
+} from "./workspace";
 
 export const IPC_CHANNELS = {
   APP_GET_BOOTSTRAP: "app:getBootstrap",
   WORKSPACE_CREATE: "workspace:create",
+  WORKSPACE_UPDATE: "workspace:update",
+  WORKSPACE_DELETE: "workspace:delete",
   WORKSPACE_SWITCH: "workspace:switch",
   WORKSPACE_CHOOSE_DIRECTORY: "workspace:chooseDirectory",
+  WORKSPACE_VALIDATE_PATHS: "workspace:validatePaths",
   WORKSPACE_CHECK_CLOUD_SYNC: "workspace:checkCloudSync",
   VIDEOS_LIST: "videos:list",
   VIDEOS_SCAN: "videos:scan",
@@ -223,6 +234,14 @@ export interface IpcChannelMap {
     request: WorkspaceCreateInput;
     response: WorkspaceRuntimeState;
   };
+  [IPC_CHANNELS.WORKSPACE_UPDATE]: {
+    request: WorkspaceUpdateInput;
+    response: WorkspaceRuntimeState;
+  };
+  [IPC_CHANNELS.WORKSPACE_DELETE]: {
+    request: WorkspaceDeleteInput;
+    response: WorkspaceRuntimeState;
+  };
   [IPC_CHANNELS.WORKSPACE_SWITCH]: {
     request: { workspaceId: string };
     response: WorkspaceRuntimeState;
@@ -230,6 +249,10 @@ export interface IpcChannelMap {
   [IPC_CHANNELS.WORKSPACE_CHOOSE_DIRECTORY]: {
     request: undefined;
     response: DirectorySelection;
+  };
+  [IPC_CHANNELS.WORKSPACE_VALIDATE_PATHS]: {
+    request: WorkspacePathValidationInput;
+    response: WorkspacePathValidationResult;
   };
   [IPC_CHANNELS.WORKSPACE_CHECK_CLOUD_SYNC]: {
     request: undefined;
@@ -570,8 +593,11 @@ export type IpcChannel = keyof IpcChannelMap;
 export interface RosterApi {
   getBootstrap(): Promise<BootstrapState>;
   createWorkspace(input: WorkspaceCreateInput): Promise<WorkspaceRuntimeState>;
+  updateWorkspace(input: WorkspaceUpdateInput): Promise<WorkspaceRuntimeState>;
+  deleteWorkspace(input: WorkspaceDeleteInput): Promise<WorkspaceRuntimeState>;
   switchWorkspace(workspaceId: string): Promise<WorkspaceRuntimeState>;
   chooseWorkspaceDirectory(): Promise<DirectorySelection>;
+  validateWorkspacePaths(input: WorkspacePathValidationInput): Promise<WorkspacePathValidationResult>;
   checkWorkspaceCloudSync(): Promise<WorkspaceCloudSyncCheckResult>;
   listVideos(): Promise<VideoLibraryItem[]>;
   scanVideos(): Promise<VideoScanSummary>;

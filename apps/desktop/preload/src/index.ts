@@ -54,14 +54,21 @@ import {
   type VideoUpdateInput,
   type WorkspaceBackupInput,
   type WorkspaceCreateInput,
+  type WorkspaceDeleteInput,
+  type WorkspacePathValidationInput,
+  type WorkspaceUpdateInput,
   type WorkspaceRestoreInput
 } from "@roster/shared-types";
 
 const api: RosterApi = {
   getBootstrap: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_BOOTSTRAP),
   createWorkspace: (input: WorkspaceCreateInput) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE, input),
+  updateWorkspace: (input: WorkspaceUpdateInput) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_UPDATE, input),
+  deleteWorkspace: (input: WorkspaceDeleteInput) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_DELETE, input),
   switchWorkspace: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SWITCH, { workspaceId }),
   chooseWorkspaceDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CHOOSE_DIRECTORY),
+  validateWorkspacePaths: (input: WorkspacePathValidationInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_VALIDATE_PATHS, input),
   checkWorkspaceCloudSync: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CHECK_CLOUD_SYNC),
   listVideos: () => ipcRenderer.invoke(IPC_CHANNELS.VIDEOS_LIST),
   scanVideos: () => ipcRenderer.invoke(IPC_CHANNELS.VIDEOS_SCAN),

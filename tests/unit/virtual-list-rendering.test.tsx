@@ -199,8 +199,12 @@ function makeRosterApiStub(): Window["roster"] {
   return {
     getBootstrap: vi.fn(),
     createWorkspace: vi.fn(),
+    updateWorkspace: vi.fn(),
+    deleteWorkspace: vi.fn(),
     switchWorkspace: vi.fn(),
     chooseWorkspaceDirectory: vi.fn(),
+    validateWorkspacePaths: vi.fn(),
+    checkWorkspaceCloudSync: vi.fn(),
     listVideos: vi.fn(),
     scanVideos: vi.fn(),
     updateVideo: vi.fn(),

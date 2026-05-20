@@ -436,14 +436,14 @@ export function SkillCenterPage(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5" data-skill-center>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Skill 中心</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             全局 Skill 池，当前工作空间：{workspace?.name ?? "未选择"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={loadSkills} disabled={loading}>
             刷新
           </Button>
@@ -454,7 +454,7 @@ export function SkillCenterPage(): JSX.Element {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)] gap-4">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="min-h-0 overflow-hidden rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3 text-sm font-semibold">Skill 列表</div>
           <div className="h-full min-h-0 overflow-y-auto p-3">
@@ -505,9 +505,9 @@ export function SkillCenterPage(): JSX.Element {
           </div>
         </aside>
 
-        <main className="grid min-h-0 grid-cols-[minmax(0,1fr)_280px] gap-4">
+        <main className="grid min-h-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_280px]">
           <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">{selected ? selected.displayName : "新建 Skill"}</div>
                 <div className="mt-1 flex items-center gap-2">
@@ -524,7 +524,7 @@ export function SkillCenterPage(): JSX.Element {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              <div className="grid grid-cols-[180px_minmax(0,1fr)_180px] gap-3">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[180px_minmax(0,1fr)_180px]">
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-foreground">Skill ID（自动生成）</span>
                   <input
@@ -559,10 +559,10 @@ export function SkillCenterPage(): JSX.Element {
               </div>
 
               <div className="mt-4 flex flex-col gap-4">
-                <label className="flex min-h-[520px] flex-col gap-1.5 text-sm">
+                <label className="flex min-h-[360px] flex-col gap-1.5 text-sm lg:min-h-[520px]">
                   <span className="font-medium text-foreground">当前编辑：{activeFilePath}</span>
                   <textarea
-                    className="min-h-[480px] flex-1 resize-y rounded-md border border-input bg-background p-3 font-mono text-sm leading-6 outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
+                    className="min-h-[320px] flex-1 resize-y rounded-md border border-input bg-background p-3 font-mono text-sm leading-6 outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15 lg:min-h-[480px]"
                     value={activeFilePath === "SKILL.md" ? form.content : activeFileContent}
                     onChange={(event) => {
                       const value = event.target.value;
@@ -575,7 +575,7 @@ export function SkillCenterPage(): JSX.Element {
                     data-skill-content-editor
                   />
                 </label>
-                <aside className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <aside className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
                   <div className="rounded-lg border border-border p-3">
                     <div className="mb-2 text-sm font-semibold">文件树</div>
                     <div className="mb-4 flex flex-wrap gap-2" data-skill-file-tree>

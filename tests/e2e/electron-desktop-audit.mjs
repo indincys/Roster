@@ -2084,7 +2084,7 @@ async function main() {
     const restoredTitle = restoredTitles.find((title) => title.id === titleBeforeRestoreMutation.id);
     assert(restoredTitle?.text === titleBeforeRestoreMutation.text, "workspace restore did not restore database contents from backup");
     const fakeApiKey = "sk-feedback-secret-1234567890";
-    await evaluate(client, `window.roster.saveApiKey({ provider: "openai", label: "反馈包脱敏测试", apiKey: ${js(fakeApiKey)} })`);
+    await evaluate(client, `window.roster.saveApiKey({ provider: "mock", label: "反馈包脱敏测试", model: "mock-title-fast", apiKey: ${js(fakeApiKey)} })`);
     await evaluate(
       client,
       `(() => {

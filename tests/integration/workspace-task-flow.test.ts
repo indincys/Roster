@@ -117,6 +117,17 @@ describe("workspace task flow integration", () => {
     expect(preflight.items).toHaveLength(4);
     expect(preflight.items.every((item) => item.relative_path.startsWith("videos/") && item.local_readable)).toBe(true);
 
+    await expect(
+      workspaceDb.exportTaskSheet({
+        sheetDate: "2026-05-09",
+        formats: ["json"],
+        targetPlatform: "windows",
+        workspaceId: runtimeState.activeWorkspaceId ?? "integration-workspace",
+        macRootPath: workspaceRoot,
+        winRootPath: ""
+      })
+    ).rejects.toThrow("RPA 执行路径");
+
     const taskRow = sheet.rows[0];
     await writeFile(path.join(workspaceRoot, "tasks/2026-05-09/status/ignored.tmp"), "{}");
     await writeFile(

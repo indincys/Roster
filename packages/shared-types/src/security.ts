@@ -1,16 +1,20 @@
 import { z } from "zod";
-import { ProviderIdSchema } from "./provider";
+import { ImageProviderConfigSchema, LlmProviderConfigSchema, ProviderIdSchema } from "./provider";
 
 export const ProviderKindSchema = ProviderIdSchema;
 export const ApiKeyKindSchema = z.enum(["text", "image"]);
 
 export const ApiKeySaveInputSchema = z.object({
+  apiKeyId: z.string().min(1).optional(),
   kind: ApiKeyKindSchema.default("text"),
   provider: ProviderKindSchema,
   label: z.string().trim().min(1).default("默认凭证"),
   model: z.string().trim().min(1).max(160).nullable().optional(),
   isDefault: z.boolean().optional().default(false),
-  apiKey: z.string().min(8, "API key 长度不足")
+  apiKey: z.string().min(8, "API key 长度不足").optional(),
+  providerConfig: z.union([LlmProviderConfigSchema, ImageProviderConfigSchema]).optional()
+}).refine((input) => Boolean(input.apiKeyId) || Boolean(input.apiKey), {
+  message: "新增 API key 时必须填写 key；编辑已保存 key 时可保留原 key"
 });
 
 export const ApiKeyPublicRecordSchema = z.object({
@@ -30,12 +34,20 @@ export const ApiKeyStorageAuditSchema = z.object({
 });
 
 export const ApiKeyConnectionTestInputSchema = z.object({
-  apiKeyId: z.string().min(1)
+  apiKeyId: z.string().min(1).optional(),
+  kind: ApiKeyKindSchema.optional(),
+  provider: ProviderKindSchema.optional(),
+  model: z.string().trim().min(1).max(160).nullable().optional(),
+  apiKey: z.string().min(8, "API key 长度不足").optional(),
+  providerConfig: z.union([LlmProviderConfigSchema, ImageProviderConfigSchema]).optional()
+}).refine((input) => Boolean(input.apiKeyId) || Boolean(input.kind && input.provider && input.apiKey), {
+  message: "需要选择已保存 API key，或提供待测试的 Provider、类型和 API key"
 });
 
 export const ApiKeyConnectionTestResultSchema = z.object({
-  apiKeyId: z.string().min(1),
+  apiKeyId: z.string().min(1).nullable(),
   provider: ProviderKindSchema,
+  kind: ApiKeyKindSchema,
   ok: z.boolean(),
   checkedAt: z.string(),
   models: z.array(z.string()),

@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import type {
   ApiKeyConnectionTestResult,
   ApiKeyKind,
+  ApiKeyPublicRecord,
   AppSettings,
   ImageProviderAdapter,
   ImageProviderConfig,
@@ -210,7 +211,17 @@ function imageAdapterForVendor(vendor: string): ImageProviderAdapter {
 }
 
 export function SettingsPage(): JSX.Element {
-  const { bootstrap, updateState, createWorkspace, saveApiKey, checkForUpdates: checkForUpdatesFromStore, loading, error } = useAppStore();
+  const {
+    bootstrap,
+    updateState,
+    createWorkspace,
+    updateWorkspace,
+    deleteWorkspace,
+    saveApiKey,
+    checkForUpdates: checkForUpdatesFromStore,
+    loading,
+    error
+  } = useAppStore();
   const workspace = activeWorkspace(bootstrap);
   const apiKeys = bootstrap?.apiKeys ?? [];
   const workspaceId = workspace?.id;
@@ -219,6 +230,7 @@ export function SettingsPage(): JSX.Element {
   const [macRootPath, setMacRootPath] = useState("");
   const [winRootPath, setWinRootPath] = useState("");
   const [apiKeyKind, setApiKeyKind] = useState<ApiKeyKind>("text");
+  const [editingApiKeyId, setEditingApiKeyId] = useState<string | null>(null);
   const [modelVendor, setModelVendor] = useState("OpenAI");
   const [modelId, setModelId] = useState("gpt-5.4-mini");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com/v1");
@@ -243,8 +255,8 @@ export function SettingsPage(): JSX.Element {
   const [cloudSyncCheck, setCloudSyncCheck] = useState<WorkspaceCloudSyncCheckResult | null>(null);
 
   const canCreateWorkspace = useMemo(
-    () => workspaceName.trim() && rootPath.trim() && macRootPath.trim() && winRootPath.trim(),
-    [macRootPath, rootPath, winRootPath, workspaceName]
+    () => workspaceName.trim() && rootPath.trim() && macRootPath.trim(),
+    [macRootPath, rootPath, workspaceName]
   );
 
   const chooseDirectory = async (): Promise<void> => {
@@ -277,6 +289,16 @@ export function SettingsPage(): JSX.Element {
   useEffect(() => {
     setUpdateCheck(updateState);
   }, [updateState]);
+
+  useEffect(() => {
+    if (!workspace) {
+      return;
+    }
+    setWorkspaceName(workspace.name);
+    setRootPath(workspace.rootPath);
+    setMacRootPath(workspace.macRootPath);
+    setWinRootPath(workspace.winRootPath);
+  }, [workspace]);
 
   useEffect(() => {
     if (apiFormHydrated || !settings) {
@@ -315,64 +337,71 @@ export function SettingsPage(): JSX.Element {
     setSavedMessage("设置已保存并立即生效。");
   };
 
+  const reloadSettings = async (): Promise<AppSettings> => {
+    const saved = await window.roster.getSettings();
+    setSettings(saved);
+    return saved;
+  };
+
   const providerConfigs = useMemo(() => settings?.llmProviderConfigs ?? [...DEFAULT_LLM_PROVIDER_CONFIGS], [settings?.llmProviderConfigs]);
   const imageProviderConfigs = useMemo(
     () => settings?.imageProviderConfigs ?? [...DEFAULT_IMAGE_PROVIDER_CONFIGS],
     [settings?.imageProviderConfigs]
   );
-  const saveProviderConfigs = async (configs: LlmProviderConfig[], message = "Provider 配置已保存。"): Promise<AppSettings> => {
-    const saved = await window.roster.saveSettings({ llmProviderConfigs: configs });
-    setSettings(saved);
-    setSavedMessage(message);
-    return saved;
-  };
+  const normalizeProviderConfig = (config: LlmProviderConfig): LlmProviderConfig => ({
+    ...config,
+    id: ProviderIdSchema.parse(config.id),
+    baseUrl: config.baseUrl?.trim() ? config.baseUrl.trim().replace(/\/+$/, "") : null
+  });
 
-  const upsertProviderConfig = async (config: LlmProviderConfig, message?: string): Promise<LlmProviderConfig> => {
-    const parsed = {
-      ...config,
-      id: ProviderIdSchema.parse(config.id),
-      baseUrl: config.baseUrl?.trim() ? config.baseUrl.trim().replace(/\/+$/, "") : null
-    };
-    const next = [...providerConfigs.filter((candidate) => candidate.id !== parsed.id), parsed].sort((left, right) =>
-      left.label.localeCompare(right.label, "zh-Hans-CN")
-    );
-    await saveProviderConfigs(next, message);
-    return parsed;
-  };
-
-  const saveImageProviderConfigs = async (configs: ImageProviderConfig[], message = "图片 Provider 配置已保存。"): Promise<AppSettings> => {
-    const saved = await window.roster.saveSettings({ imageProviderConfigs: configs });
-    setSettings(saved);
-    setSavedMessage(message);
-    return saved;
-  };
-
-  const upsertImageProviderConfig = async (config: ImageProviderConfig, message?: string): Promise<ImageProviderConfig> => {
-    const parsed = {
-      ...config,
-      id: ProviderIdSchema.parse(config.id),
-      baseUrl: config.baseUrl?.trim() ? config.baseUrl.trim().replace(/\/+$/, "") : null
-    };
-    const next = [...imageProviderConfigs.filter((candidate) => candidate.id !== parsed.id), parsed].sort((left, right) =>
-      left.label.localeCompare(right.label, "zh-Hans-CN")
-    );
-    await saveImageProviderConfigs(next, message);
-    return parsed;
-  };
+  const normalizeImageProviderConfig = (config: ImageProviderConfig): ImageProviderConfig => ({
+    ...config,
+    id: ProviderIdSchema.parse(config.id),
+    baseUrl: config.baseUrl?.trim() ? config.baseUrl.trim().replace(/\/+$/, "") : null
+  });
 
   const submitWorkspace = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
-    await createWorkspace({
-      name: workspaceName,
+    const validation = await window.roster.validateWorkspacePaths({
       rootPath,
       macRootPath,
-      winRootPath
+      winRootPath,
+      requireRpaPath: false
     });
+    if (!validation.ok) {
+      setSavedMessage(validation.errors.join("；"));
+      return;
+    }
+    const input = {
+      name: workspaceName,
+      rootPath: validation.normalized.rootPath,
+      macRootPath: validation.normalized.macRootPath,
+      winRootPath: validation.normalized.winRootPath
+    };
+    if (workspace) {
+      await updateWorkspace({ workspaceId: workspace.id, ...input });
+      setSavedMessage("工作空间已更新。");
+    } else {
+      await createWorkspace(input);
+      setSavedMessage("工作空间已创建并切换。");
+    }
+  };
+
+  const resetWorkspaceForm = (): void => {
     setWorkspaceName("");
     setRootPath("");
     setMacRootPath("");
     setWinRootPath("");
-    setSavedMessage("工作空间已创建并切换。");
+    setCloudSyncCheck(null);
+  };
+
+  const removeCurrentWorkspace = async (): Promise<void> => {
+    if (!workspace) {
+      return;
+    }
+    await deleteWorkspace({ workspaceId: workspace.id });
+    resetWorkspaceForm();
+    setSavedMessage("工作空间记录已删除，本地目录和数据文件保留。");
   };
 
   const selectPreset = (vendor: string): void => {
@@ -385,6 +414,30 @@ export function SettingsPage(): JSX.Element {
     setModelVendor(preset.vendor);
     setModelId(preset.defaultModel);
     setBaseUrl(preset.baseUrl ?? "");
+    setApiConnectionTestResult(null);
+  };
+
+  const resetApiKeyForm = (): void => {
+    setEditingApiKeyId(null);
+    setApiKey("");
+    setApiKeyLabel("");
+    setApiKeyDefault(true);
+    setApiConnectionTestResult(null);
+  };
+
+  const editApiKey = (record: ApiKeyPublicRecord): void => {
+    const config =
+      record.kind === "image"
+        ? imageProviderConfigs.find((candidate) => candidate.id === record.provider)
+        : providerConfigs.find((candidate) => candidate.id === record.provider);
+    setEditingApiKeyId(record.id);
+    setApiKeyKind(record.kind);
+    setModelVendor(config?.vendor || config?.label || record.provider);
+    setModelId(record.model || config?.defaultModel || "");
+    setBaseUrl(config?.baseUrl ?? "");
+    setApiKeyLabel(record.label);
+    setApiKeyDefault(record.isDefault);
+    setApiKey("");
     setApiConnectionTestResult(null);
   };
 
@@ -423,18 +476,34 @@ export function SettingsPage(): JSX.Element {
   const submitApiKey = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     setApiConnectionTestResult(null);
-    const provider =
-      apiKeyKind === "image"
-        ? await upsertImageProviderConfig(buildImageProviderConfigFromSimpleForm(), "图片 API 配置已保存，正在测试连接。")
-        : await upsertProviderConfig(buildProviderConfigFromSimpleForm(), "文本 API 配置已保存，正在测试连接。");
-    const model = provider.defaultModel;
-    const label = apiKeyLabel.trim() || `${provider.label} / ${model}`;
-    const savedKey = await saveApiKey({ kind: apiKeyKind, provider: provider.id, label, model, isDefault: apiKeyDefault, apiKey });
-    const result = await window.roster.testApiKey({ apiKeyId: savedKey.id });
-    setApiConnectionTestResult(result);
-    setApiKey("");
-    setApiKeyLabel("");
-    setSavedMessage(result.ok ? `API 已保存，连接测试成功：读取到 ${result.modelCount} 个模型。` : `API 已保存，连接测试失败：${result.errorCode ?? "ProviderError"}`);
+    try {
+      const provider =
+        apiKeyKind === "image"
+          ? normalizeImageProviderConfig(buildImageProviderConfigFromSimpleForm())
+          : normalizeProviderConfig(buildProviderConfigFromSimpleForm());
+      const model = provider.defaultModel;
+      const label = apiKeyLabel.trim() || `${provider.label} / ${model}`;
+      const savedKey = await saveApiKey({
+        apiKeyId: editingApiKeyId ?? undefined,
+        kind: apiKeyKind,
+        provider: provider.id,
+        label,
+        model,
+        isDefault: apiKeyDefault,
+        apiKey: apiKey.trim() ? apiKey : undefined,
+        providerConfig: provider
+      });
+      const result = await window.roster.testApiKey({ apiKeyId: savedKey.id });
+      setApiConnectionTestResult(result);
+      await reloadSettings();
+      setEditingApiKeyId(null);
+      setApiKey("");
+      setApiKeyLabel("");
+      setSavedMessage(`API 已保存，连接测试成功：读取到 ${result.modelCount} 个模型。`);
+    } catch (saveError) {
+      await reloadSettings();
+      setSavedMessage(saveError instanceof Error ? saveError.message : String(saveError));
+    }
   };
 
   const backupWorkspace = async (): Promise<void> => {
@@ -535,7 +604,7 @@ export function SettingsPage(): JSX.Element {
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       {savedMessage ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{savedMessage}</div> : null}
 
-      <div className="grid grid-cols-[1fr_420px] gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
         <Card>
           <CardHeader>
             <CardTitle>工作空间</CardTitle>
@@ -543,18 +612,18 @@ export function SettingsPage(): JSX.Element {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {workspace ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Info label="当前空间" value={workspace.name} />
                 <Info label="空间根目录" value={workspace.rootPath} />
                 <Info label="当前设备路径" value={workspace.macRootPath} />
-                <Info label="RPA 执行路径" value={workspace.winRootPath} />
+                <Info label="RPA 执行路径" value={workspace.winRootPath || "未配置"} />
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">创建工作空间后，应用会初始化目录结构和独立数据库。</p>
             )}
 
             <form className="flex flex-col gap-3 border-t border-border pt-4" onSubmit={(event) => void submitWorkspace(event)}>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Input label="工作空间名称" value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="暖心生活" />
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-foreground">工作空间根目录</span>
@@ -571,12 +640,29 @@ export function SettingsPage(): JSX.Element {
                   </div>
                 </label>
                 <Input label="Mac 根路径" value={macRootPath} onChange={(event) => setMacRootPath(event.target.value)} />
-                <Input label="Windows 根路径" value={winRootPath} onChange={(event) => setWinRootPath(event.target.value)} placeholder="D:\\CloudSync\\品牌A" />
+                <Input
+                  label="RPA 执行路径"
+                  value={winRootPath}
+                  onChange={(event) => setWinRootPath(event.target.value)}
+                  placeholder="D:\\CloudSync\\品牌A"
+                  hint="可留空；仅任务单导出和 RPA 执行会受影响。"
+                />
               </div>
-              <div className="flex justify-end">
+              <div className="flex flex-wrap justify-end gap-2">
+                {workspace ? (
+                  <>
+                    <Button variant="outline" onClick={resetWorkspaceForm} type="button">
+                      新建表单
+                    </Button>
+                    <Button variant="danger" onClick={() => void removeCurrentWorkspace()} type="button" disabled={loading}>
+                      <Trash2 />
+                      删除记录
+                    </Button>
+                  </>
+                ) : null}
                 <Button variant="primary" type="submit" disabled={!canCreateWorkspace || loading}>
-                  <Plus />
-                  创建并切换
+                  {workspace ? <Pencil /> : <Plus />}
+                  {workspace ? "保存工作空间" : "创建并切换"}
                 </Button>
               </div>
             </form>
@@ -624,7 +710,7 @@ export function SettingsPage(): JSX.Element {
                 </div>
                 <Badge variant="neutral">{platformAccounts.length} 个</Badge>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-foreground">平台</span>
                   <select
@@ -789,7 +875,8 @@ export function SettingsPage(): JSX.Element {
                     setApiConnectionTestResult(null);
                   }}
                   data-api-key-value
-                  hint="保存时使用本机密钥 AES-GCM 加密，不明文写入 config.db。"
+                  placeholder={editingApiKeyId ? "留空则保留已保存 key" : ""}
+                  hint="保存前会先做连通性测试；测试通过后才使用本机密钥 AES-GCM 加密写入。"
                 />
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -806,7 +893,7 @@ export function SettingsPage(): JSX.Element {
                   disabled={
                     !modelVendor.trim() ||
                     !modelId.trim() ||
-                    !apiKey.trim() ||
+                    (!editingApiKeyId && !apiKey.trim()) ||
                     ((apiKeyKind === "image" ? imageAdapterForVendor(modelVendor) !== "mock" : textAdapterForVendor(modelVendor) !== "mock") &&
                       !baseUrl.trim())
                   }
@@ -814,8 +901,13 @@ export function SettingsPage(): JSX.Element {
                   data-test-api-key
                 >
                   <KeyRound />
-                  保存并测试 API
+                  {editingApiKeyId ? "测试并保存修改" : "保存并测试 API"}
                 </Button>
+                {editingApiKeyId ? (
+                  <Button variant="outline" onClick={resetApiKeyForm}>
+                    取消编辑
+                  </Button>
+                ) : null}
                 {apiConnectionTestResult ? (
                   <div className="rounded-md border border-border bg-background p-2 text-xs" data-api-key-test-result={apiConnectionTestResult.apiKeyId}>
                     <div className={apiConnectionTestResult.ok ? "text-emerald-700" : "text-red-700"}>
@@ -844,7 +936,7 @@ export function SettingsPage(): JSX.Element {
                       {apiKeys.map((record) => (
                         <div
                           key={record.id}
-                          className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-md border border-border px-3 py-2 text-xs"
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border px-3 py-2 text-xs"
                           data-api-key-row={record.id}
                         >
                           <div className="min-w-0">
@@ -856,6 +948,9 @@ export function SettingsPage(): JSX.Element {
                           <div className="flex items-center gap-1">
                             <Badge variant={record.kind === "image" ? "info" : "neutral"}>{record.kind === "image" ? "图片" : "文本"}</Badge>
                             <Badge variant={record.isDefault ? "success" : "neutral"}>{record.isDefault ? "默认" : "备用"}</Badge>
+                            <Button variant="ghost" size="icon" aria-label="编辑 API key" onClick={() => editApiKey(record)} data-edit-api-key={record.id}>
+                              <Pencil />
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -873,7 +968,7 @@ export function SettingsPage(): JSX.Element {
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <p className="text-sm leading-6 text-muted-foreground">生成当前工作空间 zip 备份，默认保存到 `_backup/`。</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-foreground">备份范围</span>
                   <select
@@ -936,7 +1031,7 @@ export function SettingsPage(): JSX.Element {
               <ShieldCheck className="size-4 text-primary" />
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-foreground">扫描频率</span>
                   <select
@@ -999,7 +1094,7 @@ export function SettingsPage(): JSX.Element {
                   data-setting-provider-retry
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+              <div className="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2">
                 <Info label="当前版本" value={bootstrap?.appVersion ?? "-"} />
                 <Info label="更新通道" value={settings?.updateChannel === "beta" ? "Beta" : "Stable"} />
               </div>
@@ -1012,7 +1107,7 @@ export function SettingsPage(): JSX.Element {
               <Trash2 className="size-4 text-primary" />
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Info label="当前版本" value={bootstrap?.appVersion ?? "-"} />
                 <Info label="更新通道" value={settings?.updateChannel === "beta" ? "Beta" : "Stable"} />
               </div>
@@ -1082,9 +1177,9 @@ export function SettingsPage(): JSX.Element {
 
 function Info({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-3">
+    <div className="min-w-0 rounded-md border border-border bg-background p-3">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="truncate font-mono text-xs">{value}</span>
+      <span className="mt-1 block break-all font-mono text-xs">{value}</span>
     </div>
   );
 }

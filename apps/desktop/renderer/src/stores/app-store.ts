@@ -5,7 +5,9 @@ import type {
   BootstrapState,
   SoftwareUpdateCheckResult,
   WorkspaceCreateInput,
-  WorkspaceRecord
+  WorkspaceDeleteInput,
+  WorkspaceRecord,
+  WorkspaceUpdateInput
 } from "@roster/shared-types";
 
 export type AppPage =
@@ -41,6 +43,8 @@ interface AppStore {
   installUpdate(): Promise<void>;
   loadBootstrap(): Promise<void>;
   createWorkspace(input: WorkspaceCreateInput): Promise<void>;
+  updateWorkspace(input: WorkspaceUpdateInput): Promise<void>;
+  deleteWorkspace(input: WorkspaceDeleteInput): Promise<void>;
   switchWorkspace(workspaceId: string): Promise<void>;
   saveApiKey(input: ApiKeySaveInput): Promise<ApiKeyPublicRecord>;
 }
@@ -94,6 +98,35 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({
         bootstrap: current ? { ...current, workspace } : null,
         page: "dashboard",
+        loading: false
+      });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      throw error;
+    }
+  },
+  updateWorkspace: async (input) => {
+    set({ loading: true, error: null });
+    try {
+      const workspace = await window.roster.updateWorkspace(input);
+      const current = get().bootstrap;
+      set({
+        bootstrap: current ? { ...current, workspace } : null,
+        loading: false
+      });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      throw error;
+    }
+  },
+  deleteWorkspace: async (input) => {
+    set({ loading: true, error: null });
+    try {
+      const workspace = await window.roster.deleteWorkspace(input);
+      const current = get().bootstrap;
+      set({
+        bootstrap: current ? { ...current, workspace } : null,
+        page: workspace.activeWorkspaceId ? get().page : "settings",
         loading: false
       });
     } catch (error) {

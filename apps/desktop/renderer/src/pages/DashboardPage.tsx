@@ -99,7 +99,7 @@ export function DashboardPage(): JSX.Element {
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
             <PathRow label="当前设备路径" value={workspace.macRootPath} />
-            <PathRow label="RPA 执行路径" value={workspace.winRootPath} />
+            <PathRow label="RPA 执行路径" value={workspace.winRootPath || "未配置"} />
             <p className="text-xs leading-5 text-muted-foreground">业务数据仅保存相对路径；界面展示与任务单导出时再按目标平台拼接。</p>
           </CardContent>
         </Card>

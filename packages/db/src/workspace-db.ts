@@ -1430,6 +1430,9 @@ export class WorkspaceDatabase {
     if (sheet.rows.length === 0) {
       throw new Error("任务单没有任务行，无法导出");
     }
+    if (!input.winRootPath.trim()) {
+      throw new Error("任务单导出需要先在设置页填写 RPA 执行路径");
+    }
 
     const result = await exportTaskSheetFiles({
       workspaceId: input.workspaceId,

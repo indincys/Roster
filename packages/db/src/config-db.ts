@@ -5,9 +5,13 @@ import path from "node:path";
 import crypto from "node:crypto";
 import {
   ApiKeySaveInputSchema,
+  ApiKeyKindSchema,
   AppSettingsSaveInputSchema,
   AppSettingsSchema,
+  ImageProviderConfigSchema,
   ImageSubdirectories,
+  LlmProviderConfigSchema,
+  ProviderKindSchema,
   sanitizeImageProviderConfigs,
   sanitizeLlmProviderConfigs,
   SkillActivationConfigSchema,
@@ -24,6 +28,9 @@ import {
   SkillSnapshotRestoreInputSchema,
   WORKSPACE_DIRECTORIES,
   WorkspaceCreateInputSchema,
+  WorkspaceDeleteInputSchema,
+  WorkspacePathValidationInputSchema,
+  WorkspaceUpdateInputSchema,
   type ApiKeyPublicRecord,
   type ApiKeySaveInput,
   type AppSettings,
@@ -48,13 +55,17 @@ import {
   type SkillSnapshotRestoreInput,
   type SkillWorkflowType,
   type WorkspaceCreateInput,
+  type WorkspaceDeleteInput,
+  type WorkspacePathValidationInput,
+  type WorkspacePathValidationResult,
   type WorkspaceRecord,
-  type WorkspaceRuntimeState
+  type WorkspaceRuntimeState,
+  type WorkspaceUpdateInput
 } from "@roster/shared-types";
 import { writeJsonAtomic } from "./atomic";
 import { CONFIG_MIGRATIONS, WORKSPACE_MIGRATIONS } from "./schema";
 import { decryptSecret, encryptSecret } from "./secrets";
-import { normalizeWinRootPath } from "./path-utils";
+import { validateWorkspacePaths } from "./path-utils";
 import { applySqlMigrations, openSqliteDatabase, type SqliteDatabase } from "./sqlite";
 
 const LOCK_STALE_AFTER_MS = 30_000;
@@ -169,8 +180,8 @@ function coerceWorkspaceRow(row: Record<string, unknown>): WorkspaceRow {
 function mapApiKeyRow(row: ApiKeyRow): ApiKeyPublicRecord {
   return {
     id: row.id,
-    kind: ApiKeySaveInputSchema.shape.kind.parse(row.kind),
-    provider: ApiKeySaveInputSchema.shape.provider.parse(row.provider),
+    kind: ApiKeyKindSchema.parse(row.kind),
+    provider: ProviderKindSchema.parse(row.provider),
     label: row.label,
     model: row.model,
     isDefault: row.is_default === 1,
@@ -301,6 +312,12 @@ function pickWorkspaceColor(name: string): string {
   return palette[sum % palette.length] ?? palette[0];
 }
 
+function upsertProviderConfig<T extends { id: string; label: string }>(configs: T[], config: T): T[] {
+  return [...configs.filter((candidate) => candidate.id !== config.id), config].sort((left, right) =>
+    left.label.localeCompare(right.label, "zh-Hans-CN")
+  );
+}
+
 export class ConfigDatabase {
   private readonly db: SqliteDatabase;
   private readonly userDataPath: string;
@@ -363,9 +380,11 @@ export class ConfigDatabase {
     const parsed = WorkspaceCreateInputSchema.parse(input);
     const id = crypto.randomUUID();
     const timestamp = nowIso();
-    const rootPath = path.resolve(parsed.rootPath);
-    const macRootPath = path.resolve(parsed.macRootPath);
-    const winRootPath = normalizeWinRootPath(parsed.winRootPath);
+    const validation = this.validateWorkspacePaths(parsed);
+    if (!validation.ok) {
+      throw new Error(validation.errors.join("；"));
+    }
+    const { rootPath, macRootPath, winRootPath } = validation.normalized;
 
     await this.ensureWritableDirectory(rootPath);
     await this.createWorkspaceFiles({
@@ -400,6 +419,60 @@ export class ConfigDatabase {
 
     this.setPreference("activeWorkspaceId", id);
     return this.getRuntimeState();
+  }
+
+  async updateWorkspace(input: WorkspaceUpdateInput): Promise<WorkspaceRuntimeState> {
+    const parsed = WorkspaceUpdateInputSchema.parse(input);
+    const existing = this.getWorkspace(parsed.workspaceId);
+    if (!existing) {
+      throw new Error("工作空间不存在");
+    }
+    const validation = this.validateWorkspacePaths(parsed);
+    if (!validation.ok) {
+      throw new Error(validation.errors.join("；"));
+    }
+    const timestamp = nowIso();
+    const { rootPath, macRootPath, winRootPath } = validation.normalized;
+    await this.ensureWritableDirectory(rootPath);
+    await this.ensureWorkspaceDataFiles({
+      id: parsed.workspaceId,
+      name: parsed.name,
+      rootPath,
+      macRootPath,
+      winRootPath,
+      createdAt: existing.createdAt,
+      updatedAt: timestamp
+    });
+    this.db
+      .prepare(
+        `UPDATE workspaces
+         SET name = ?, root_path = ?, mac_root_path = ?, win_root_path = ?, color = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(parsed.name, rootPath, macRootPath, winRootPath, pickWorkspaceColor(parsed.name), timestamp, parsed.workspaceId);
+    return this.getRuntimeState();
+  }
+
+  deleteWorkspace(input: WorkspaceDeleteInput): WorkspaceRuntimeState {
+    const parsed = WorkspaceDeleteInputSchema.parse(input);
+    const existing = this.getWorkspace(parsed.workspaceId);
+    if (!existing) {
+      throw new Error("工作空间不存在");
+    }
+    this.db.prepare("DELETE FROM workspaces WHERE id = ?").run(parsed.workspaceId);
+    if (this.getPreference("activeWorkspaceId") === parsed.workspaceId) {
+      const nextWorkspace = this.listWorkspaces()[0];
+      if (nextWorkspace) {
+        this.setPreference("activeWorkspaceId", nextWorkspace.id);
+      } else {
+        this.deletePreference("activeWorkspaceId");
+      }
+    }
+    return this.getRuntimeState();
+  }
+
+  validateWorkspacePaths(input: WorkspacePathValidationInput): WorkspacePathValidationResult {
+    return validateWorkspacePaths(WorkspacePathValidationInputSchema.parse(input));
   }
 
   switchWorkspace(workspaceId: string): WorkspaceRuntimeState {
@@ -448,23 +521,55 @@ export class ConfigDatabase {
   async saveApiKey(input: ApiKeySaveInput): Promise<ApiKeyPublicRecord> {
     const parsed = ApiKeySaveInputSchema.parse(input);
     const timestamp = nowIso();
-    const id = crypto.randomUUID();
-    const encrypted = await encryptSecret(path.join(this.userDataPath, "vault"), parsed.apiKey);
+    const providerConfig = parsed.providerConfig;
+    const id = parsed.apiKeyId ?? crypto.randomUUID();
+    if (parsed.apiKeyId && !this.db.prepare("SELECT id FROM api_keys WHERE id = ?").get(parsed.apiKeyId)) {
+      throw new Error("API key 不存在");
+    }
+    const existingSecret =
+      parsed.apiKeyId && !parsed.apiKey
+        ? coerceApiKeySecretRow(this.db.prepare("SELECT * FROM api_keys WHERE id = ?").get(parsed.apiKeyId) as Record<string, unknown>)
+        : null;
+    const encrypted = parsed.apiKey
+      ? await encryptSecret(path.join(this.userDataPath, "vault"), parsed.apiKey)
+      : existingSecret
+        ? {
+            ciphertext: existingSecret.ciphertext,
+            iv: existingSecret.iv,
+            authTag: existingSecret.auth_tag,
+            fingerprint: existingSecret.fingerprint
+          }
+        : (() => {
+            throw new Error("API key 不能为空");
+          })();
     const model = parsed.model?.trim() || null;
-    const existingForProvider = this.listApiKeys().filter((key) => key.provider === parsed.provider && key.kind === parsed.kind);
+    const existingForProvider = this.listApiKeys().filter(
+      (key) => key.provider === parsed.provider && key.kind === parsed.kind && key.id !== id
+    );
     const shouldSetDefault = parsed.isDefault || existingForProvider.length === 0;
 
     if (shouldSetDefault) {
       this.db
-        .prepare("UPDATE api_keys SET is_default = 0, updated_at = ? WHERE provider = ? AND kind = ?")
-        .run(timestamp, parsed.provider, parsed.kind);
+        .prepare("UPDATE api_keys SET is_default = 0, updated_at = ? WHERE provider = ? AND kind = ? AND id <> ?")
+        .run(timestamp, parsed.provider, parsed.kind, id);
     }
 
     this.db
       .prepare(
         `INSERT INTO api_keys (
           id, kind, provider, label, model, is_default, ciphertext, iv, auth_tag, fingerprint, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          kind = excluded.kind,
+          provider = excluded.provider,
+          label = excluded.label,
+          model = excluded.model,
+          is_default = excluded.is_default,
+          ciphertext = excluded.ciphertext,
+          iv = excluded.iv,
+          auth_tag = excluded.auth_tag,
+          fingerprint = excluded.fingerprint,
+          updated_at = excluded.updated_at`
       )
       .run(
         id,
@@ -480,6 +585,15 @@ export class ConfigDatabase {
         timestamp,
         timestamp
       );
+
+    if (providerConfig) {
+      const settings = this.getSettings();
+      this.saveSettings(
+        parsed.kind === "image"
+          ? { imageProviderConfigs: upsertProviderConfig(settings.imageProviderConfigs, ImageProviderConfigSchema.parse(providerConfig)) }
+          : { llmProviderConfigs: upsertProviderConfig(settings.llmProviderConfigs, LlmProviderConfigSchema.parse(providerConfig)) }
+      );
+    }
 
     return {
       id,
@@ -1106,6 +1220,10 @@ export class ConfigDatabase {
       .run(key, value, nowIso());
   }
 
+  private deletePreference(key: string): void {
+    this.db.prepare("DELETE FROM preferences WHERE key = ?").run(key);
+  }
+
   private async nextSkillIdForType(type: SkillWorkflowType): Promise<string> {
     const prefix = SKILL_ID_PREFIXES[type];
     const ids = new Set((await this.listSkills()).map((skill) => skill.id));
@@ -1332,6 +1450,45 @@ export class ConfigDatabase {
       openedAt: input.createdAt,
       lastHeartbeatAt: input.createdAt
     });
+  }
+
+  private async ensureWorkspaceDataFiles(input: {
+    id: string;
+    name: string;
+    rootPath: string;
+    macRootPath: string;
+    winRootPath: string;
+    createdAt: string;
+    updatedAt: string;
+  }): Promise<void> {
+    await Promise.all(WORKSPACE_DIRECTORIES.map((dir) => mkdir(path.join(input.rootPath, dir), { recursive: true })));
+    await Promise.all(
+      ImageSubdirectories.map((dir) => mkdir(path.join(input.rootPath, "images", dir), { recursive: true }))
+    );
+
+    const workspaceDb = await openSqliteDatabase(path.join(input.rootPath, "workspace.db"));
+    applySqlMigrations(workspaceDb, WORKSPACE_MIGRATIONS);
+    workspaceDb.close();
+
+    await writeJsonAtomic(path.join(input.rootPath, "workspace.json"), {
+      id: input.id,
+      name: input.name,
+      macRootPath: input.macRootPath,
+      winRootPath: input.winRootPath,
+      createdAt: input.createdAt,
+      updatedAt: input.updatedAt
+    });
+
+    const activationPath = path.join(input.rootPath, "skills_config", "activation.json");
+    try {
+      await stat(activationPath);
+    } catch {
+      await writeJsonAtomic(activationPath, {
+        workspaceId: input.id,
+        enabledSkillIds: [],
+        updatedAt: input.updatedAt
+      });
+    }
   }
 
   private async assertNoFreshLock(rootPath: string): Promise<void> {
