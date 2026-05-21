@@ -196,4 +196,29 @@ describe("WorkspaceDatabase video library scanning", () => {
     ]);
     db.close();
   });
+
+  it("scans a custom external video library root and stores videos/<sku>/... paths", async () => {
+    const workspaceRoot = await makeWorkspaceRoot();
+    const libraryRoot = await mkdtemp(path.join(os.tmpdir(), "roster-video-library-"));
+    tempRoots.push(libraryRoot);
+    await mkdir(path.join(libraryRoot, "SKU-X-001"), { recursive: true });
+    await writeFile(path.join(libraryRoot, "SKU-X-001", "style_a.mp4"), "video-bytes");
+    await mkdir(path.join(libraryRoot, "SKU-X-002", "款式 A"), { recursive: true });
+    await writeFile(path.join(libraryRoot, "SKU-X-002", "款式 A", "含 空格.mov"), "video-bytes");
+
+    const db = await WorkspaceDatabase.open(workspaceRoot, { videoLibraryRootPath: libraryRoot });
+
+    const summary = await db.scanVideos();
+
+    expect(summary).toMatchObject({ scanned: 2, added: 2, archived: 0 });
+    expect(db.getVideoLibraryRootPath()).toBe(libraryRoot);
+    const videos = db.listVideos();
+    expect(videos.map((video) => video.relativePath)).toEqual([
+      "videos/SKU-X-001/style_a.mp4",
+      "videos/SKU-X-002/款式 A/含 空格.mov"
+    ]);
+    expect(videos[0]).toMatchObject({ sku: "SKU-X-001", style: null });
+    expect(videos[1]).toMatchObject({ sku: "SKU-X-002", style: "款式 A" });
+    db.close();
+  });
 });

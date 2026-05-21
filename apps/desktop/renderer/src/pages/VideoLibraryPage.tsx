@@ -281,13 +281,17 @@ export function VideoLibraryPage(): JSX.Element {
     setPage("covers");
   }
 
+  const videoLibraryDisplayPath = workspace
+    ? workspace.videoLibraryRootPath || `${workspace.rootPath}/videos`
+    : "";
+
   if (!workspace) {
     return (
       <div className="flex min-h-full items-center justify-center p-8">
         <div className="flex w-full max-w-xl flex-col items-center gap-3 rounded-lg border border-border bg-card p-8 text-center">
           <Database className="size-10 text-muted-foreground" />
           <h1 className="text-base font-semibold">先创建品牌工作空间</h1>
-          <p className="text-sm leading-6 text-muted-foreground">视频库索引当前工作空间的 `videos/` 目录，并只保存相对路径。</p>
+          <p className="text-sm leading-6 text-muted-foreground">视频库默认索引当前工作空间的 `videos/` 目录；也可以在设置中指定外部视频库路径。</p>
           <Button variant="primary" onClick={() => setPage("settings")}>
             去设置中创建
           </Button>
@@ -301,7 +305,13 @@ export function VideoLibraryPage(): JSX.Element {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">视频库</h1>
-          <p className="mt-1 text-sm text-muted-foreground">索引 `videos/` 下的视频文件，不复制原文件；数据库仅保存相对路径。</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            索引视频库根目录下按 SKU 组织的视频文件，不复制原文件；数据库仅保存相对路径。
+          </p>
+          <p className="mt-1 font-mono text-xs text-muted-foreground" data-video-library-root-display>
+            当前根目录：{videoLibraryDisplayPath}
+            {workspace.videoLibraryRootPath ? "（自定义）" : "（工作空间默认）"}
+          </p>
         </div>
         <Button variant="primary" onClick={onScan} disabled={loading}>
           <RefreshCw className={cn(loading && "animate-spin")} />
@@ -410,7 +420,7 @@ export function VideoLibraryPage(): JSX.Element {
             <Clapperboard className="size-10 text-muted-foreground" />
             <div className="text-sm font-medium">{query ? "没有匹配的视频" : "视频库还没有素材"}</div>
             <p className="max-w-md text-sm leading-6 text-muted-foreground">
-              将素材放入 `{workspace.name}/videos/` 后点击重新扫描。路径会按 `videos/SKU/款式/文件` 解析 SKU 和款式。
+              将素材放入 <span className="font-mono">{videoLibraryDisplayPath}</span> 后点击重新扫描。路径会按 `SKU/款式/文件` 解析 SKU 和款式。
             </p>
             <Button variant="outline" onClick={onScan} disabled={loading}>
               <RefreshCw className={cn(loading && "animate-spin")} />

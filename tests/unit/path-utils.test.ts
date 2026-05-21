@@ -65,4 +65,74 @@ describe("workspace path utilities", () => {
       })
     ).toMatchObject({ ok: false, errors: expect.arrayContaining(["Mac 根路径必须是 macOS 绝对路径"]) });
   });
+
+  it("validates optional video library paths and normalizes Win separators", () => {
+    expect(
+      validateWorkspacePaths({
+        rootPath: "/Users/name/CloudSync/品牌A",
+        macRootPath: "/Users/name/CloudSync/品牌A",
+        winRootPath: "",
+        videoLibraryRootPath: "/Users/name/OneDrive/视频库",
+        videoLibraryMacRootPath: "/Users/name/OneDrive/视频库",
+        videoLibraryWinRootPath: "D:/OneDrive/视频库/"
+      })
+    ).toMatchObject({
+      ok: true,
+      normalized: {
+        videoLibraryRootPath: "/Users/name/OneDrive/视频库",
+        videoLibraryMacRootPath: "/Users/name/OneDrive/视频库",
+        videoLibraryWinRootPath: "D:\\OneDrive\\视频库"
+      }
+    });
+
+    expect(
+      validateWorkspacePaths({
+        rootPath: "/Users/name/CloudSync/品牌A",
+        macRootPath: "/Users/name/CloudSync/品牌A",
+        winRootPath: "",
+        videoLibraryMacRootPath: "Users/name/OneDrive/视频库",
+        videoLibraryWinRootPath: "OneDrive/视频库"
+      })
+    ).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([
+        "视频库 Mac 路径必须是 macOS 绝对路径",
+        "视频库 Windows 路径必须是 Windows 绝对路径，例如 D:\\VideoLibrary\\品牌A"
+      ])
+    });
+  });
+
+  it("routes video paths to the video library Win root when configured", () => {
+    expect(
+      resolveWorkspacePath({
+        targetPlatform: "windows",
+        macRootPath: "/Users/name/CloudSync/品牌A",
+        winRootPath: "D:\\CloudSync\\品牌A",
+        videoLibraryMacRootPath: "/Users/name/OneDrive/视频库",
+        videoLibraryWinRootPath: "E:/OneDrive/视频库",
+        relativePath: "videos/SKU001/style_a.mp4"
+      })
+    ).toBe("E:\\OneDrive\\视频库\\SKU001\\style_a.mp4");
+
+    expect(
+      resolveWorkspacePath({
+        targetPlatform: "windows",
+        macRootPath: "/Users/name/CloudSync/品牌A",
+        winRootPath: "D:\\CloudSync\\品牌A",
+        videoLibraryMacRootPath: "/Users/name/OneDrive/视频库",
+        videoLibraryWinRootPath: "E:/OneDrive/视频库",
+        relativePath: "covers/SKU001/style_a__3x4.jpg"
+      })
+    ).toBe("D:\\CloudSync\\品牌A\\covers\\SKU001\\style_a__3x4.jpg");
+
+    expect(
+      resolveWorkspacePath({
+        targetPlatform: "macos",
+        macRootPath: "/Users/name/CloudSync/品牌A",
+        winRootPath: "D:\\CloudSync\\品牌A",
+        videoLibraryMacRootPath: "/Users/name/OneDrive/视频库",
+        relativePath: "videos/SKU001/style_a.mp4"
+      })
+    ).toBe(path.join("/Users/name/OneDrive/视频库", "SKU001", "style_a.mp4"));
+  });
 });
