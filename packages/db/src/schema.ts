@@ -56,6 +56,12 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_kind_provider_model ON api_keys(kind, pr
 CREATE INDEX IF NOT EXISTS idx_api_keys_kind_provider_default ON api_keys(kind, provider, is_default);
 `;
 
+export const CONFIG_WORKSPACE_VIDEO_LIBRARY_PATHS_SQL = `
+ALTER TABLE workspaces ADD COLUMN video_library_root_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE workspaces ADD COLUMN video_library_mac_root_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE workspaces ADD COLUMN video_library_win_root_path TEXT NOT NULL DEFAULT '';
+`;
+
 export const WORKSPACE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   id TEXT PRIMARY KEY,
@@ -429,6 +435,10 @@ export const CONFIG_MIGRATIONS: SqlMigration[] = [
   {
     id: "0003_api_key_kind",
     sql: CONFIG_API_KEY_KIND_SQL
+  },
+  {
+    id: "0004_workspace_video_library_paths",
+    sql: CONFIG_WORKSPACE_VIDEO_LIBRARY_PATHS_SQL
   }
 ];
 

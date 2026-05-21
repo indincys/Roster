@@ -12,6 +12,9 @@ export interface TaskExportOptions {
   workspaceRootPath: string;
   macRootPath: string;
   winRootPath: string;
+  videoLibraryRootPath?: string;
+  videoLibraryMacRootPath?: string;
+  videoLibraryWinRootPath?: string;
   sheet: TaskSheetRecord;
   formats: TaskExportFormat[];
 }
@@ -191,6 +194,15 @@ async function probePath(absolutePath: string): Promise<{
   }
 }
 
+function currentDeviceAbsolutePathFor(options: TaskExportOptions, relativePath: string): string {
+  const isVideoPath = relativePath === "videos" || relativePath.startsWith("videos/");
+  if (isVideoPath && options.videoLibraryRootPath && options.videoLibraryRootPath.trim()) {
+    const sub = relativePath.slice("videos/".length);
+    return path.join(options.videoLibraryRootPath, sub);
+  }
+  return path.join(options.workspaceRootPath, relativePath);
+}
+
 async function buildPreflightItems(options: TaskExportOptions): Promise<TaskExportPreflightItem[]> {
   const items: TaskExportPreflightItem[] = [];
   for (const row of options.sheet.rows) {
@@ -199,11 +211,13 @@ async function buildPreflightItems(options: TaskExportOptions): Promise<TaskExpo
       ...(row.coverRelativePath ? [{ kind: "cover" as const, relativePath: row.coverRelativePath }] : [])
     ];
     for (const item of paths) {
-      const currentDevicePath = path.join(options.workspaceRootPath, item.relativePath);
+      const currentDevicePath = currentDeviceAbsolutePathFor(options, item.relativePath);
       const targetPath = resolveWorkspacePath({
         targetPlatform: "windows",
         macRootPath: options.macRootPath,
         winRootPath: options.winRootPath,
+        videoLibraryMacRootPath: options.videoLibraryMacRootPath,
+        videoLibraryWinRootPath: options.videoLibraryWinRootPath,
         relativePath: item.relativePath
       });
       const probe = await probePath(currentDevicePath);
@@ -230,6 +244,8 @@ function toExportRows(options: TaskExportOptions): ExportTaskRow[] {
       targetPlatform: "windows",
       macRootPath: options.macRootPath,
       winRootPath: options.winRootPath,
+      videoLibraryMacRootPath: options.videoLibraryMacRootPath,
+      videoLibraryWinRootPath: options.videoLibraryWinRootPath,
       relativePath: row.videoRelativePath
     });
     const coverPath = row.coverRelativePath

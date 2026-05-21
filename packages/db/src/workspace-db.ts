@@ -83,9 +83,15 @@ import {
 } from "@roster/shared-types";
 import { applySqlMigrations, openSqliteDatabase, type SqliteDatabase } from "./sqlite";
 import { WORKSPACE_MIGRATIONS } from "./schema";
-import { toWorkspaceRelativePath } from "./path-utils";
+import { resolveVideoLibraryRootPath, toVideoLibraryRelativePath, toWorkspaceRelativePath } from "./path-utils";
 import { exportTaskSheetFiles } from "./task-exporter";
 import { generateTaskRows } from "./task-generator";
+
+export interface WorkspaceDatabaseOpenOptions {
+  videoLibraryRootPath?: string | null;
+  videoLibraryMacRootPath?: string | null;
+  videoLibraryWinRootPath?: string | null;
+}
 
 const SUPPORTED_VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".avi", ".mkv", ".flv"]);
 
@@ -1106,19 +1112,34 @@ async function listVideoFiles(rootPath: string): Promise<string[]> {
 export class WorkspaceDatabase {
   private constructor(
     private readonly workspaceRootPath: string,
-    private readonly db: SqliteDatabase
+    private readonly db: SqliteDatabase,
+    private readonly options: WorkspaceDatabaseOpenOptions = {}
   ) {
     applySqlMigrations(this.db, WORKSPACE_MIGRATIONS);
   }
 
-  static async open(workspaceRootPath: string): Promise<WorkspaceDatabase> {
-    await mkdir(path.join(workspaceRootPath, "videos"), { recursive: true });
+  static async open(
+    workspaceRootPath: string,
+    options: WorkspaceDatabaseOpenOptions = {}
+  ): Promise<WorkspaceDatabase> {
+    const videoLibraryRoot = resolveVideoLibraryRootPath({
+      workspaceRootPath,
+      videoLibraryRootPath: options.videoLibraryRootPath ?? null
+    });
+    await mkdir(videoLibraryRoot, { recursive: true });
     const db = await openSqliteDatabase(path.join(workspaceRootPath, "workspace.db"));
-    return new WorkspaceDatabase(workspaceRootPath, db);
+    return new WorkspaceDatabase(workspaceRootPath, db, options);
   }
 
   close(): void {
     this.db.close();
+  }
+
+  getVideoLibraryRootPath(): string {
+    return resolveVideoLibraryRootPath({
+      workspaceRootPath: this.workspaceRootPath,
+      videoLibraryRootPath: this.options.videoLibraryRootPath ?? null
+    });
   }
 
   listVideos(): VideoRecord[] {
@@ -1421,7 +1442,16 @@ export class WorkspaceDatabase {
     return mapTaskSheetRow(sheetRow, this.listTaskRows(sheetRow.id));
   }
 
-  async exportTaskSheet(input: TaskExportInput & { workspaceId: string; macRootPath: string; winRootPath: string }): Promise<TaskExportResult> {
+  async exportTaskSheet(
+    input: TaskExportInput & {
+      workspaceId: string;
+      macRootPath: string;
+      winRootPath: string;
+      videoLibraryRootPath?: string;
+      videoLibraryMacRootPath?: string;
+      videoLibraryWinRootPath?: string;
+    }
+  ): Promise<TaskExportResult> {
     const parsed = TaskExportInputSchema.parse(input);
     const sheet = this.getTaskSheetByDate(parsed.sheetDate);
     if (!sheet) {
@@ -1434,11 +1464,19 @@ export class WorkspaceDatabase {
       throw new Error("任务单导出需要先在设置页填写 RPA 执行路径");
     }
 
+    const customVideoLibraryConfigured = Boolean(input.videoLibraryRootPath && input.videoLibraryRootPath.trim());
+    if (customVideoLibraryConfigured && !input.videoLibraryWinRootPath?.trim()) {
+      throw new Error("使用自定义视频库时，任务单导出还需要先填写视频库 Windows 路径");
+    }
+
     const result = await exportTaskSheetFiles({
       workspaceId: input.workspaceId,
       workspaceRootPath: this.workspaceRootPath,
       macRootPath: input.macRootPath,
       winRootPath: input.winRootPath,
+      videoLibraryRootPath: input.videoLibraryRootPath,
+      videoLibraryMacRootPath: input.videoLibraryMacRootPath,
+      videoLibraryWinRootPath: input.videoLibraryWinRootPath,
       sheet,
       formats: parsed.formats
     });
@@ -2258,9 +2296,10 @@ export class WorkspaceDatabase {
 
   async scanVideos(options: { metadataReader?: VideoMetadataReader; thumbnailGenerator?: ThumbnailGenerator } = {}): Promise<VideoScanSummary> {
     const timestamp = nowIso();
-    const absoluteFiles = await listVideoFiles(path.join(this.workspaceRootPath, "videos"));
+    const videoLibraryRootPath = this.getVideoLibraryRootPath();
+    const absoluteFiles = await listVideoFiles(videoLibraryRootPath);
     const scannedVideos = await Promise.all(
-      absoluteFiles.map((absolutePath) => this.scanVideoFile(absolutePath, options.metadataReader))
+      absoluteFiles.map((absolutePath) => this.scanVideoFile(absolutePath, videoLibraryRootPath, options.metadataReader))
     );
     const currentRelativePaths = new Set(scannedVideos.map((video) => video.relativePath));
 
@@ -2320,9 +2359,16 @@ export class WorkspaceDatabase {
     };
   }
 
-  private async scanVideoFile(absolutePath: string, metadataReader?: VideoMetadataReader): Promise<ScannedVideo> {
+  private async scanVideoFile(
+    absolutePath: string,
+    videoLibraryRootPath: string,
+    metadataReader?: VideoMetadataReader
+  ): Promise<ScannedVideo> {
     const fileStat = await stat(absolutePath);
-    const relativePath = toWorkspaceRelativePath(this.workspaceRootPath, absolutePath);
+    const isCustomLibrary = videoLibraryRootPath !== path.join(this.workspaceRootPath, "videos");
+    const relativePath = isCustomLibrary
+      ? toVideoLibraryRelativePath(videoLibraryRootPath, absolutePath)
+      : toWorkspaceRelativePath(this.workspaceRootPath, absolutePath);
     const parsed = parseSkuAndStyle(relativePath);
     const fileName = path.basename(absolutePath);
 

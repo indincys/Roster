@@ -40,14 +40,34 @@ export function validateWorkspacePaths(input: {
   rootPath?: string;
   macRootPath?: string;
   winRootPath?: string;
+  videoLibraryRootPath?: string;
+  videoLibraryMacRootPath?: string;
+  videoLibraryWinRootPath?: string;
   requireRpaPath?: boolean;
-}): { ok: boolean; errors: string[]; normalized: { rootPath: string; macRootPath: string; winRootPath: string } } {
+}): {
+  ok: boolean;
+  errors: string[];
+  normalized: {
+    rootPath: string;
+    macRootPath: string;
+    winRootPath: string;
+    videoLibraryRootPath: string;
+    videoLibraryMacRootPath: string;
+    videoLibraryWinRootPath: string;
+  };
+} {
   const rawRootPath = input.rootPath?.trim() ?? "";
   const rawMacRootPath = input.macRootPath?.trim() ?? "";
   const rawWinRootPath = input.winRootPath?.trim() ?? "";
+  const rawVideoLibraryRootPath = input.videoLibraryRootPath?.trim() ?? "";
+  const rawVideoLibraryMacRootPath = input.videoLibraryMacRootPath?.trim() ?? "";
+  const rawVideoLibraryWinRootPath = input.videoLibraryWinRootPath?.trim() ?? "";
   const rootPath = path.resolve(rawRootPath || ".");
   const macRootPath = path.resolve(rawMacRootPath || "");
   const winRootPath = rawWinRootPath ? normalizeWinRootPath(rawWinRootPath) : "";
+  const videoLibraryRootPath = rawVideoLibraryRootPath ? path.resolve(rawVideoLibraryRootPath) : "";
+  const videoLibraryMacRootPath = rawVideoLibraryMacRootPath ? path.resolve(rawVideoLibraryMacRootPath) : "";
+  const videoLibraryWinRootPath = rawVideoLibraryWinRootPath ? normalizeWinRootPath(rawVideoLibraryWinRootPath) : "";
   const errors: string[] = [];
 
   if (!rawRootPath) {
@@ -68,13 +88,30 @@ export function validateWorkspacePaths(input: {
     errors.push("RPA 执行路径必须是 Windows 绝对路径，例如 D:\\CloudSync\\品牌A 或 \\\\server\\share\\品牌A");
   }
 
+  if (rawVideoLibraryRootPath && !isValidCurrentPlatformAbsolutePath(rawVideoLibraryRootPath)) {
+    errors.push(
+      process.platform === "win32"
+        ? "视频库根目录必须是 Windows 绝对路径"
+        : "视频库根目录必须是 macOS 绝对路径"
+    );
+  }
+  if (rawVideoLibraryMacRootPath && !isValidMacAbsolutePath(rawVideoLibraryMacRootPath)) {
+    errors.push("视频库 Mac 路径必须是 macOS 绝对路径");
+  }
+  if (videoLibraryWinRootPath && !isValidWindowsAbsolutePath(videoLibraryWinRootPath)) {
+    errors.push("视频库 Windows 路径必须是 Windows 绝对路径，例如 D:\\VideoLibrary\\品牌A");
+  }
+
   return {
     ok: errors.length === 0,
     errors,
     normalized: {
       rootPath,
       macRootPath,
-      winRootPath
+      winRootPath,
+      videoLibraryRootPath,
+      videoLibraryMacRootPath,
+      videoLibraryWinRootPath
     }
   };
 }
@@ -93,9 +130,22 @@ export function resolveWorkspacePath(options: {
   macRootPath: string;
   winRootPath: string;
   relativePath: string;
+  videoLibraryMacRootPath?: string;
+  videoLibraryWinRootPath?: string;
 }): string {
   const relativePath = assertRelativeWorkspacePath(options.relativePath);
+  const isVideoPath = relativePath === "videos" || relativePath.startsWith("videos/");
+  const videoLibrarySubPath = isVideoPath ? relativePath.slice("videos/".length) : "";
+
   if (options.targetPlatform === "windows") {
+    if (isVideoPath && options.videoLibraryWinRootPath && options.videoLibraryWinRootPath.trim()) {
+      const winLibraryRoot = normalizeWinRootPath(options.videoLibraryWinRootPath);
+      if (!isValidWindowsAbsolutePath(winLibraryRoot)) {
+        throw new Error("视频库 Windows 路径必须是合法的 Windows 绝对路径");
+      }
+      const separator = winLibraryRoot.endsWith("\\") ? "" : "\\";
+      return `${winLibraryRoot}${separator}${videoLibrarySubPath.replaceAll("/", "\\")}`;
+    }
     const winRootPath = normalizeWinRootPath(options.winRootPath);
     if (!isValidWindowsAbsolutePath(winRootPath)) {
       throw new Error("任务单导出需要先填写合法的 RPA 执行路径");
@@ -104,7 +154,29 @@ export function resolveWorkspacePath(options: {
     return `${winRootPath}${separator}${relativePath.replaceAll("/", "\\")}`;
   }
 
+  if (isVideoPath && options.videoLibraryMacRootPath && options.videoLibraryMacRootPath.trim()) {
+    return path.join(options.videoLibraryMacRootPath, videoLibrarySubPath);
+  }
   return path.join(options.macRootPath, relativePath);
+}
+
+export function resolveVideoLibraryRootPath(options: {
+  workspaceRootPath: string;
+  videoLibraryRootPath: string | null | undefined;
+}): string {
+  const customRoot = options.videoLibraryRootPath?.trim();
+  if (customRoot) {
+    return customRoot;
+  }
+  return path.join(options.workspaceRootPath, "videos");
+}
+
+export function toVideoLibraryRelativePath(rootPath: string, absolutePath: string): string {
+  const sub = path.relative(rootPath, absolutePath).replaceAll(path.sep, "/");
+  if (!sub) {
+    return "videos";
+  }
+  return assertRelativeWorkspacePath(`videos/${sub}`);
 }
 
 export function isLikelyCloudSyncPath(input: string): boolean {

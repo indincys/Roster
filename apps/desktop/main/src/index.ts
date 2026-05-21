@@ -181,18 +181,37 @@ function getConfigDb(): ConfigDatabase {
 }
 
 function getActiveWorkspaceRootPath(): string {
-  const state = getConfigDb().getRuntimeState();
-  if (!state.activeWorkspaceId) {
-    throw new Error("请先创建或选择工作空间");
-  }
-  const workspace = getConfigDb().getWorkspace(state.activeWorkspaceId);
-  if (!workspace) {
-    throw new Error("当前工作空间不存在");
-  }
-  return workspace.rootPath;
+  return getActiveWorkspaceRecord().rootPath;
 }
 
-function getActiveWorkspaceRecord(): { id: string; rootPath: string; macRootPath: string; winRootPath: string } {
+function getActiveVideoLibraryRootPath(): string {
+  const workspace = getActiveWorkspaceRecord();
+  const custom = workspace.videoLibraryRootPath?.trim();
+  if (custom) {
+    return custom;
+  }
+  return path.join(workspace.rootPath, "videos");
+}
+
+function resolveActiveAbsolutePath(relativePath: string): string {
+  const workspace = getActiveWorkspaceRecord();
+  const isVideoPath = relativePath === "videos" || relativePath.startsWith("videos/");
+  const customVideoLibrary = workspace.videoLibraryRootPath?.trim();
+  if (isVideoPath && customVideoLibrary) {
+    return path.join(customVideoLibrary, relativePath.slice("videos/".length));
+  }
+  return path.join(workspace.rootPath, relativePath);
+}
+
+function getActiveWorkspaceRecord(): {
+  id: string;
+  rootPath: string;
+  macRootPath: string;
+  winRootPath: string;
+  videoLibraryRootPath: string;
+  videoLibraryMacRootPath: string;
+  videoLibraryWinRootPath: string;
+} {
   const state = getConfigDb().getRuntimeState();
   if (!state.activeWorkspaceId) {
     throw new Error("请先创建或选择工作空间");
@@ -205,12 +224,20 @@ function getActiveWorkspaceRecord(): { id: string; rootPath: string; macRootPath
     id: workspace.id,
     rootPath: workspace.rootPath,
     macRootPath: workspace.macRootPath,
-    winRootPath: workspace.winRootPath
+    winRootPath: workspace.winRootPath,
+    videoLibraryRootPath: workspace.videoLibraryRootPath,
+    videoLibraryMacRootPath: workspace.videoLibraryMacRootPath,
+    videoLibraryWinRootPath: workspace.videoLibraryWinRootPath
   };
 }
 
 async function withActiveWorkspaceDb<T>(callback: (db: WorkspaceDatabase) => Promise<T> | T): Promise<T> {
-  const db = await WorkspaceDatabase.open(getActiveWorkspaceRootPath());
+  const workspace = getActiveWorkspaceRecord();
+  const db = await WorkspaceDatabase.open(workspace.rootPath, {
+    videoLibraryRootPath: workspace.videoLibraryRootPath || null,
+    videoLibraryMacRootPath: workspace.videoLibraryMacRootPath || null,
+    videoLibraryWinRootPath: workspace.videoLibraryWinRootPath || null
+  });
   try {
     return await callback(db);
   } finally {
@@ -261,11 +288,16 @@ function resolveFfmpegToolPaths(): FfmpegToolPaths | null {
 }
 
 function toVideoLibraryItem(video: VideoRecord): VideoLibraryItem {
-  const workspaceRootPath = getActiveWorkspaceRootPath();
+  const workspace = getActiveWorkspaceRecord();
+  const videoLibraryRootPath = workspace.videoLibraryRootPath?.trim() || path.join(workspace.rootPath, "videos");
   const previewRelativePath = encodeURIComponent(video.relativePath);
+  const isVideoPath = video.relativePath === "videos" || video.relativePath.startsWith("videos/");
+  const currentAbsolutePath = isVideoPath
+    ? path.join(videoLibraryRootPath, video.relativePath.slice("videos/".length))
+    : path.join(workspace.rootPath, video.relativePath);
   return {
     ...video,
-    currentAbsolutePath: path.join(workspaceRootPath, video.relativePath),
+    currentAbsolutePath,
     thumbnailAbsolutePath: video.thumbnailRelativePath
       ? path.join(app.getPath("userData"), "cache", "video-thumbnails", video.thumbnailRelativePath)
       : null,
@@ -353,7 +385,7 @@ async function getCoverTimelineFrameForVideo(input: {
   const cacheRootPath = path.join(app.getPath("userData"), "cache", "cover-timeline");
   const frameCount = 30;
   const safeIndex = Math.max(0, Math.min(frameCount - 1, input.frameIndex));
-  const videoAbsolutePath = path.join(getActiveWorkspaceRootPath(), input.video.relativePath);
+  const videoAbsolutePath = resolveActiveAbsolutePath(input.video.relativePath);
   const toolPaths = resolveFfmpegToolPaths();
   try {
     const timeline = toolPaths
@@ -391,6 +423,7 @@ async function getCoverTimelineFrameForVideo(input: {
 
 async function writeCoverFile(input: {
   workspaceRootPath: string;
+  videoLibraryRootPath?: string | null;
   video: VideoRecord;
   aspectRatio: "3:4" | "9:16" | "1:1" | "custom";
   customRatio?: { width: number; height: number };
@@ -405,11 +438,17 @@ async function writeCoverFile(input: {
   const coverRelativePath = path.posix.join("covers", sku, `${videoBaseName}__${ratio.token}.jpg`);
   const coverAbsolutePath = path.join(input.workspaceRootPath, coverRelativePath);
   await mkdir(path.dirname(coverAbsolutePath), { recursive: true });
+  const isVideoPath =
+    input.video.relativePath === "videos" || input.video.relativePath.startsWith("videos/");
+  const customVideoLibrary = input.videoLibraryRootPath?.trim();
+  const videoAbsolutePath = isVideoPath && customVideoLibrary
+    ? path.join(customVideoLibrary, input.video.relativePath.slice("videos/".length))
+    : path.join(input.workspaceRootPath, input.video.relativePath);
   const toolPaths = resolveFfmpegToolPaths();
   if (toolPaths) {
     try {
       await createCoverJpegGenerator(toolPaths)({
-        videoAbsolutePath: path.join(input.workspaceRootPath, input.video.relativePath),
+        videoAbsolutePath,
         outputAbsolutePath: coverAbsolutePath,
         second: input.frameSecond ?? 0,
         aspectRatioWidth: ratio.width,
@@ -1716,7 +1755,7 @@ function registerIpcHandlers(): void {
       if (!video) {
         throw new Error("视频不存在");
       }
-      const videoAbsolutePath = path.join(getActiveWorkspaceRootPath(), video.relativePath);
+      const videoAbsolutePath = resolveActiveAbsolutePath(video.relativePath);
       const toolPaths = resolveFfmpegToolPaths();
       try {
         const result = toolPaths
@@ -1768,7 +1807,7 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle(IPC_CHANNELS.COVERS_APPLY, async (_event, payload: unknown) => {
     const input = CoverApplyInputSchema.parse(payload);
-    const workspaceRootPath = getActiveWorkspaceRootPath();
+    const workspace = getActiveWorkspaceRecord();
     return withActiveWorkspaceDb(async (db) => {
       const video = db.listVideos().find((candidate) => candidate.id === input.videoId);
       if (!video) {
@@ -1779,7 +1818,8 @@ function registerIpcHandlers(): void {
         frameIndex: input.frameIndex ?? 0
       });
       const written = await writeCoverFile({
-        workspaceRootPath,
+        workspaceRootPath: workspace.rootPath,
+        videoLibraryRootPath: workspace.videoLibraryRootPath || null,
         video,
         aspectRatio: input.aspectRatio,
         customRatio: input.customRatio,
@@ -1797,7 +1837,7 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle(IPC_CHANNELS.COVERS_BATCH_APPLY_FIRST_FRAME, async (_event, payload: unknown) => {
     const input = CoverBatchApplyFirstFrameInputSchema.parse(payload);
-    const workspaceRootPath = getActiveWorkspaceRootPath();
+    const workspace = getActiveWorkspaceRecord();
     return withActiveWorkspaceDb(async (db) => {
       const videos = db.listVideos();
       const pendingVideos = videos.filter((video) => !video.hasCover && video.status !== "archived");
@@ -1805,7 +1845,8 @@ function registerIpcHandlers(): void {
       const coverRelativePaths: string[] = [];
       for (const video of pendingVideos) {
         const written = await writeCoverFile({
-          workspaceRootPath,
+          workspaceRootPath: workspace.rootPath,
+          videoLibraryRootPath: workspace.videoLibraryRootPath || null,
           video,
           aspectRatio: input.aspectRatio,
           customRatio: input.customRatio,
@@ -2603,7 +2644,10 @@ function registerIpcHandlers(): void {
         ...input,
         workspaceId: workspace.id,
         macRootPath: workspace.macRootPath,
-        winRootPath: workspace.winRootPath
+        winRootPath: workspace.winRootPath,
+        videoLibraryRootPath: workspace.videoLibraryRootPath || undefined,
+        videoLibraryMacRootPath: workspace.videoLibraryMacRootPath || undefined,
+        videoLibraryWinRootPath: workspace.videoLibraryWinRootPath || undefined
       })
     );
   });
@@ -2860,24 +2904,37 @@ function registerLocalCacheProtocol(): void {
       return new Response(null, { status: 403 });
     }
 
-    const rootPath =
-      requestUrl.hostname === "video-thumbnails"
-        ? path.join(app.getPath("userData"), "cache", "video-thumbnails")
-        : requestUrl.hostname === "cover-timeline"
-          ? path.join(app.getPath("userData"), "cache", "cover-timeline")
-        : requestUrl.hostname === "workspace-video"
-          ? getActiveWorkspaceRootPath()
-          : null;
+    let rootPath: string | null = null;
+    let pathUnderRoot = relativePath;
+
+    if (requestUrl.hostname === "video-thumbnails") {
+      rootPath = path.join(app.getPath("userData"), "cache", "video-thumbnails");
+    } else if (requestUrl.hostname === "cover-timeline") {
+      rootPath = path.join(app.getPath("userData"), "cache", "cover-timeline");
+    } else if (requestUrl.hostname === "workspace-video") {
+      if (!relativePath.startsWith("videos/")) {
+        return new Response(null, { status: 403 });
+      }
+      const videoLibraryRoot = getActiveVideoLibraryRootPath();
+      const workspaceVideosRoot = path.join(getActiveWorkspaceRootPath(), "videos");
+      if (videoLibraryRoot === workspaceVideosRoot) {
+        rootPath = getActiveWorkspaceRootPath();
+        pathUnderRoot = relativePath;
+      } else {
+        rootPath = videoLibraryRoot;
+        pathUnderRoot = relativePath.slice("videos/".length);
+        if (!pathUnderRoot) {
+          return new Response(null, { status: 403 });
+        }
+      }
+    }
+
     if (!rootPath) {
       return new Response(null, { status: 404 });
     }
 
-    if (requestUrl.hostname === "workspace-video" && !relativePath.startsWith("videos/")) {
-      return new Response(null, { status: 403 });
-    }
-
     const resolvedRootPath = path.resolve(rootPath);
-    const absolutePath = path.resolve(resolvedRootPath, relativePath);
+    const absolutePath = path.resolve(resolvedRootPath, pathUnderRoot);
     if (absolutePath !== resolvedRootPath && !absolutePath.startsWith(`${resolvedRootPath}${path.sep}`)) {
       return new Response(null, { status: 403 });
     }

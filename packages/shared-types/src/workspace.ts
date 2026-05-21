@@ -12,6 +12,9 @@ export const WorkspaceCreateInputSchema = z.object({
   rootPath: z.string().min(1, "工作空间根目录不能为空"),
   macRootPath: z.string().min(1, "Mac 根路径不能为空"),
   winRootPath: z.string().trim().default(""),
+  videoLibraryRootPath: z.string().trim().default(""),
+  videoLibraryMacRootPath: z.string().trim().default(""),
+  videoLibraryWinRootPath: z.string().trim().default(""),
   copySkillConfigFromWorkspaceId: z.string().optional()
 });
 
@@ -20,7 +23,10 @@ export const WorkspaceUpdateInputSchema = z.object({
   name: z.string().trim().min(1, "工作空间名称不能为空"),
   rootPath: z.string().min(1, "工作空间根目录不能为空"),
   macRootPath: z.string().min(1, "Mac 根路径不能为空"),
-  winRootPath: z.string().trim().default("")
+  winRootPath: z.string().trim().default(""),
+  videoLibraryRootPath: z.string().trim().default(""),
+  videoLibraryMacRootPath: z.string().trim().default(""),
+  videoLibraryWinRootPath: z.string().trim().default("")
 });
 
 export const WorkspaceDeleteInputSchema = z.object({
@@ -31,6 +37,9 @@ export const WorkspacePathValidationInputSchema = z.object({
   rootPath: z.string().trim().optional().default(""),
   macRootPath: z.string().trim().optional().default(""),
   winRootPath: z.string().trim().optional().default(""),
+  videoLibraryRootPath: z.string().trim().optional().default(""),
+  videoLibraryMacRootPath: z.string().trim().optional().default(""),
+  videoLibraryWinRootPath: z.string().trim().optional().default(""),
   requireRpaPath: z.boolean().optional().default(false)
 });
 
@@ -40,7 +49,10 @@ export const WorkspacePathValidationResultSchema = z.object({
   normalized: z.object({
     rootPath: z.string(),
     macRootPath: z.string(),
-    winRootPath: z.string()
+    winRootPath: z.string(),
+    videoLibraryRootPath: z.string(),
+    videoLibraryMacRootPath: z.string(),
+    videoLibraryWinRootPath: z.string()
   })
 });
 
@@ -50,6 +62,9 @@ export const WorkspaceRecordSchema = z.object({
   rootPath: z.string(),
   macRootPath: z.string(),
   winRootPath: z.string(),
+  videoLibraryRootPath: z.string(),
+  videoLibraryMacRootPath: z.string(),
+  videoLibraryWinRootPath: z.string(),
   color: z.string(),
   isDefault: z.boolean(),
   isReadOnly: z.boolean(),

@@ -229,6 +229,9 @@ export function SettingsPage(): JSX.Element {
   const [rootPath, setRootPath] = useState("");
   const [macRootPath, setMacRootPath] = useState("");
   const [winRootPath, setWinRootPath] = useState("");
+  const [videoLibraryRootPath, setVideoLibraryRootPath] = useState("");
+  const [videoLibraryMacRootPath, setVideoLibraryMacRootPath] = useState("");
+  const [videoLibraryWinRootPath, setVideoLibraryWinRootPath] = useState("");
   const [apiKeyKind, setApiKeyKind] = useState<ApiKeyKind>("text");
   const [editingApiKeyId, setEditingApiKeyId] = useState<string | null>(null);
   const [modelVendor, setModelVendor] = useState("OpenAI");
@@ -267,6 +270,14 @@ export function SettingsPage(): JSX.Element {
     }
   };
 
+  const chooseVideoLibraryDirectory = async (): Promise<void> => {
+    const selected = await window.roster.chooseWorkspaceDirectory();
+    if (!selected.canceled && selected.path) {
+      setVideoLibraryRootPath(selected.path);
+      setVideoLibraryMacRootPath(selected.path);
+    }
+  };
+
   useEffect(() => {
     window.roster
       .getSettings()
@@ -298,6 +309,9 @@ export function SettingsPage(): JSX.Element {
     setRootPath(workspace.rootPath);
     setMacRootPath(workspace.macRootPath);
     setWinRootPath(workspace.winRootPath);
+    setVideoLibraryRootPath(workspace.videoLibraryRootPath ?? "");
+    setVideoLibraryMacRootPath(workspace.videoLibraryMacRootPath ?? "");
+    setVideoLibraryWinRootPath(workspace.videoLibraryWinRootPath ?? "");
   }, [workspace]);
 
   useEffect(() => {
@@ -366,6 +380,9 @@ export function SettingsPage(): JSX.Element {
       rootPath,
       macRootPath,
       winRootPath,
+      videoLibraryRootPath,
+      videoLibraryMacRootPath,
+      videoLibraryWinRootPath,
       requireRpaPath: false
     });
     if (!validation.ok) {
@@ -376,7 +393,10 @@ export function SettingsPage(): JSX.Element {
       name: workspaceName,
       rootPath: validation.normalized.rootPath,
       macRootPath: validation.normalized.macRootPath,
-      winRootPath: validation.normalized.winRootPath
+      winRootPath: validation.normalized.winRootPath,
+      videoLibraryRootPath: validation.normalized.videoLibraryRootPath,
+      videoLibraryMacRootPath: validation.normalized.videoLibraryMacRootPath,
+      videoLibraryWinRootPath: validation.normalized.videoLibraryWinRootPath
     };
     if (workspace) {
       await updateWorkspace({ workspaceId: workspace.id, ...input });
@@ -392,6 +412,9 @@ export function SettingsPage(): JSX.Element {
     setRootPath("");
     setMacRootPath("");
     setWinRootPath("");
+    setVideoLibraryRootPath("");
+    setVideoLibraryMacRootPath("");
+    setVideoLibraryWinRootPath("");
     setCloudSyncCheck(null);
   };
 
@@ -617,6 +640,11 @@ export function SettingsPage(): JSX.Element {
                 <Info label="空间根目录" value={workspace.rootPath} />
                 <Info label="当前设备路径" value={workspace.macRootPath} />
                 <Info label="RPA 执行路径" value={workspace.winRootPath || "未配置"} />
+                <Info
+                  label="视频库根目录"
+                  value={workspace.videoLibraryRootPath || `${workspace.rootPath}/videos（默认）`}
+                />
+                <Info label="视频库 Windows 路径" value={workspace.videoLibraryWinRootPath || "未配置"} />
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">创建工作空间后，应用会初始化目录结构和独立数据库。</p>
@@ -646,6 +674,49 @@ export function SettingsPage(): JSX.Element {
                   onChange={(event) => setWinRootPath(event.target.value)}
                   placeholder="D:\\CloudSync\\品牌A"
                   hint="可留空；仅任务单导出和 RPA 执行会受影响。"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 border-t border-border pt-3 md:grid-cols-2" data-video-library-section>
+                <label className="flex flex-col gap-1.5 text-sm md:col-span-2">
+                  <span className="font-medium text-foreground">视频库根目录（可选）</span>
+                  <div className="flex gap-2">
+                    <input
+                      className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/15"
+                      value={videoLibraryRootPath}
+                      onChange={(event) => setVideoLibraryRootPath(event.target.value)}
+                      placeholder="/Users/name/OneDrive/视频库"
+                      data-video-library-root-path
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="选择视频库目录"
+                      onClick={() => void chooseVideoLibraryDirectory()}
+                      type="button"
+                    >
+                      <FolderOpen />
+                    </Button>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    留空时使用工作空间下的 `videos/` 目录；填写后视频扫描会直接读取此目录里的 SKU 子文件夹。
+                  </span>
+                </label>
+                <Input
+                  label="视频库 Mac 路径"
+                  value={videoLibraryMacRootPath}
+                  onChange={(event) => setVideoLibraryMacRootPath(event.target.value)}
+                  placeholder="/Users/name/OneDrive/视频库"
+                  hint="Mac 端视频库绝对路径，留空时跟随当前设备路径。"
+                  data-video-library-mac-root-path
+                />
+                <Input
+                  label="视频库 Windows 路径"
+                  value={videoLibraryWinRootPath}
+                  onChange={(event) => setVideoLibraryWinRootPath(event.target.value)}
+                  placeholder="D:\\OneDrive\\视频库"
+                  hint="供任务单导出和 RPA 拼接 Windows 视频路径使用。"
+                  data-video-library-win-root-path
                 />
               </div>
               <div className="flex flex-wrap justify-end gap-2">

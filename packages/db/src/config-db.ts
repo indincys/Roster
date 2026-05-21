@@ -88,6 +88,9 @@ interface WorkspaceRow {
   root_path: string;
   mac_root_path: string;
   win_root_path: string;
+  video_library_root_path: string;
+  video_library_mac_root_path: string;
+  video_library_win_root_path: string;
   color: string;
   is_default: number;
   is_read_only: number;
@@ -152,6 +155,9 @@ function mapWorkspaceRow(row: WorkspaceRow): WorkspaceRecord {
     rootPath: row.root_path,
     macRootPath: row.mac_root_path,
     winRootPath: row.win_root_path,
+    videoLibraryRootPath: row.video_library_root_path,
+    videoLibraryMacRootPath: row.video_library_mac_root_path,
+    videoLibraryWinRootPath: row.video_library_win_root_path,
     color: row.color,
     isDefault: row.is_default === 1,
     isReadOnly: row.is_read_only === 1,
@@ -168,6 +174,9 @@ function coerceWorkspaceRow(row: Record<string, unknown>): WorkspaceRow {
     root_path: rowString(row, "root_path"),
     mac_root_path: rowString(row, "mac_root_path"),
     win_root_path: rowString(row, "win_root_path"),
+    video_library_root_path: rowOptionalString(row, "video_library_root_path") ?? "",
+    video_library_mac_root_path: rowOptionalString(row, "video_library_mac_root_path") ?? "",
+    video_library_win_root_path: rowOptionalString(row, "video_library_win_root_path") ?? "",
     color: rowString(row, "color"),
     is_default: rowNumber(row, "is_default"),
     is_read_only: rowNumber(row, "is_read_only"),
@@ -384,7 +393,14 @@ export class ConfigDatabase {
     if (!validation.ok) {
       throw new Error(validation.errors.join("；"));
     }
-    const { rootPath, macRootPath, winRootPath } = validation.normalized;
+    const {
+      rootPath,
+      macRootPath,
+      winRootPath,
+      videoLibraryRootPath,
+      videoLibraryMacRootPath,
+      videoLibraryWinRootPath
+    } = validation.normalized;
 
     await this.ensureWritableDirectory(rootPath);
     await this.createWorkspaceFiles({
@@ -393,6 +409,9 @@ export class ConfigDatabase {
       rootPath,
       macRootPath,
       winRootPath,
+      videoLibraryRootPath,
+      videoLibraryMacRootPath,
+      videoLibraryWinRootPath,
       createdAt: timestamp
     });
 
@@ -400,9 +419,10 @@ export class ConfigDatabase {
     this.db
       .prepare(
         `INSERT INTO workspaces (
-          id, name, root_path, mac_root_path, win_root_path, color, is_default,
-          is_read_only, last_opened_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+          id, name, root_path, mac_root_path, win_root_path,
+          video_library_root_path, video_library_mac_root_path, video_library_win_root_path,
+          color, is_default, is_read_only, last_opened_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
       )
       .run(
         id,
@@ -410,6 +430,9 @@ export class ConfigDatabase {
         rootPath,
         macRootPath,
         winRootPath,
+        videoLibraryRootPath,
+        videoLibraryMacRootPath,
+        videoLibraryWinRootPath,
         pickWorkspaceColor(parsed.name),
         isDefault,
         timestamp,
@@ -432,7 +455,14 @@ export class ConfigDatabase {
       throw new Error(validation.errors.join("；"));
     }
     const timestamp = nowIso();
-    const { rootPath, macRootPath, winRootPath } = validation.normalized;
+    const {
+      rootPath,
+      macRootPath,
+      winRootPath,
+      videoLibraryRootPath,
+      videoLibraryMacRootPath,
+      videoLibraryWinRootPath
+    } = validation.normalized;
     await this.ensureWritableDirectory(rootPath);
     await this.ensureWorkspaceDataFiles({
       id: parsed.workspaceId,
@@ -440,16 +470,32 @@ export class ConfigDatabase {
       rootPath,
       macRootPath,
       winRootPath,
+      videoLibraryRootPath,
+      videoLibraryMacRootPath,
+      videoLibraryWinRootPath,
       createdAt: existing.createdAt,
       updatedAt: timestamp
     });
     this.db
       .prepare(
         `UPDATE workspaces
-         SET name = ?, root_path = ?, mac_root_path = ?, win_root_path = ?, color = ?, updated_at = ?
+         SET name = ?, root_path = ?, mac_root_path = ?, win_root_path = ?,
+             video_library_root_path = ?, video_library_mac_root_path = ?, video_library_win_root_path = ?,
+             color = ?, updated_at = ?
          WHERE id = ?`
       )
-      .run(parsed.name, rootPath, macRootPath, winRootPath, pickWorkspaceColor(parsed.name), timestamp, parsed.workspaceId);
+      .run(
+        parsed.name,
+        rootPath,
+        macRootPath,
+        winRootPath,
+        videoLibraryRootPath,
+        videoLibraryMacRootPath,
+        videoLibraryWinRootPath,
+        pickWorkspaceColor(parsed.name),
+        timestamp,
+        parsed.workspaceId
+      );
     return this.getRuntimeState();
   }
 
@@ -1415,6 +1461,9 @@ export class ConfigDatabase {
     rootPath: string;
     macRootPath: string;
     winRootPath: string;
+    videoLibraryRootPath: string;
+    videoLibraryMacRootPath: string;
+    videoLibraryWinRootPath: string;
     createdAt: string;
   }): Promise<void> {
     await this.assertNoFreshLock(input.rootPath);
@@ -1432,6 +1481,9 @@ export class ConfigDatabase {
       name: input.name,
       macRootPath: input.macRootPath,
       winRootPath: input.winRootPath,
+      videoLibraryRootPath: input.videoLibraryRootPath,
+      videoLibraryMacRootPath: input.videoLibraryMacRootPath,
+      videoLibraryWinRootPath: input.videoLibraryWinRootPath,
       createdAt: input.createdAt,
       updatedAt: input.createdAt
     });
@@ -1458,6 +1510,9 @@ export class ConfigDatabase {
     rootPath: string;
     macRootPath: string;
     winRootPath: string;
+    videoLibraryRootPath: string;
+    videoLibraryMacRootPath: string;
+    videoLibraryWinRootPath: string;
     createdAt: string;
     updatedAt: string;
   }): Promise<void> {
@@ -1475,6 +1530,9 @@ export class ConfigDatabase {
       name: input.name,
       macRootPath: input.macRootPath,
       winRootPath: input.winRootPath,
+      videoLibraryRootPath: input.videoLibraryRootPath,
+      videoLibraryMacRootPath: input.videoLibraryMacRootPath,
+      videoLibraryWinRootPath: input.videoLibraryWinRootPath,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt
     });
