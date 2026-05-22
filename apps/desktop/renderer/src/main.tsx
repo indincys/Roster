@@ -4,6 +4,7 @@ import { App } from "./App";
 import { installPreviewStub } from "./preview-stub";
 import { useAppStore } from "./stores/app-store";
 import "./styles.css";
+import "./image-studio.css";
 
 installPreviewStub();
 

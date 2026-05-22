@@ -23,7 +23,9 @@ import {
   IPC_CHANNELS,
   ImagePromptWorkspaceGenerateInputSchema,
   ImageScenePresetSaveInputSchema,
+  ImageWorkspaceAdHocGenerateInputSchema,
   ImageWorkspaceGenerateInputSchema,
+  type ImageWorkspaceProviderTarget,
   ImageSaveInputSchema,
   ImageSoftDeleteInputSchema,
   PlatformAccountSaveInputSchema,
@@ -1534,6 +1536,124 @@ async function runScriptScheduledJob(job: ScheduledJobRecord, db: WorkspaceDatab
   };
 }
 
+async function runImageWorkspaceGeneration(
+  db: WorkspaceDatabase,
+  prompts: Array<{ id: string; text: string; scene: string }>,
+  params: {
+    targets: ImageWorkspaceProviderTarget[];
+    provider?: ImageWorkspaceProviderTarget["provider"];
+    model: string;
+    generationStrategy: "all_providers" | "load_balance";
+    perPromptCount: number;
+    aspectRatio: "1:1" | "3:4" | "9:16" | "16:9";
+    outputSubdir: string;
+  }
+): Promise<{ requested: number; savedImages: ImageLibraryItem[]; failed: number; errors: string[] }> {
+  const workspaceRootPath = getActiveWorkspaceRootPath();
+  const expectedDimensions = getImageDimensions(params.aspectRatio);
+  const { perPromptCount, aspectRatio, outputSubdir, generationStrategy } = params;
+  const targets: ImageWorkspaceProviderTarget[] =
+    params.targets.length > 0
+      ? params.targets
+      : [
+          {
+            provider: params.provider ?? (params.model.startsWith("mock") ? "mock" : "openai"),
+            model: params.model,
+            apiKeyId: null
+          }
+        ];
+  const jobs =
+    generationStrategy === "all_providers"
+      ? prompts.flatMap((prompt) => targets.map((target) => ({ prompt, target })))
+      : prompts.map((prompt, index) => ({ prompt, target: targets[index % targets.length] as ImageWorkspaceProviderTarget }));
+  const settled = await mapWithConcurrency(
+    jobs,
+    getConfigDb().getSettings().providerConcurrencyLimit,
+    async ({ prompt, target }) => {
+      const config = getImageProviderConfig(target.provider);
+      const providerApiKey = await getImageApiKeyForTarget(target);
+      const provider = config ? createImageProviderFromConfig(config, providerApiKey) : null;
+      if (!provider) {
+        throw new Error(`图片 Provider 未配置：${target.provider}`);
+      }
+      if (provider.id !== "mock" && !providerApiKey) {
+        throw new Error(`未配置 ${provider.id} 图片 API key`);
+      }
+      const startedAt = new Date().toISOString();
+      try {
+        const generated = await provider.generate({
+          provider: provider.id,
+          model: target.model,
+          prompt: prompt.text,
+          count: perPromptCount,
+          ratio: aspectRatio,
+          apiKey: providerApiKey
+        });
+        db.saveApiCallLog({
+          provider: provider.id,
+          model: target.model,
+          workflow: "image_workspace",
+          status: "success",
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null
+        });
+        const savedImages: ImageLibraryItem[] = [];
+        for (const generatedImage of generated.images) {
+          const providerSlug = provider.id.replace(/[^A-Za-z0-9._-]+/g, "-");
+          const fileName = `${prompt.id}-${providerSlug}-${generatedImage.id}.${generatedImage.extension}`;
+          const relativePath = path.posix.join("images", outputSubdir, fileName);
+          const absolutePath = path.join(workspaceRootPath, relativePath);
+          await mkdir(path.dirname(absolutePath), { recursive: true });
+          await writeFile(absolutePath, generatedImage.bytes);
+          savedImages.push(
+            toImageLibraryItem(
+              db.saveImage({
+                promptId: prompt.id,
+                relativePath,
+                scene: prompt.scene,
+                width: generatedImage.width || expectedDimensions.width,
+                height: generatedImage.height || expectedDimensions.height,
+                aspectRatio,
+                sourceModel: `${generated.provider}/${generated.model}`,
+                status: "active",
+                generatedAt: new Date().toISOString()
+              })
+            )
+          );
+        }
+        db.incrementPromptGeneratedCount(prompt.id, savedImages.length);
+        return savedImages;
+      } catch (error) {
+        db.saveApiCallLog({
+          provider: provider.id,
+          model: target.model,
+          workflow: "image_workspace",
+          status: "failed",
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
+          errorCode: providerErrorCode(error),
+          errorMessage: redactSensitiveText(error instanceof Error ? error.message : String(error))
+        });
+        throw error;
+      }
+    }
+  );
+  const savedImages = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  const errors = [
+    ...new Set(
+      settled
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => redactSensitiveText(result.reason instanceof Error ? result.reason.message : String(result.reason)))
+    )
+  ];
+  return { requested: jobs.length * perPromptCount, savedImages, failed: errors.length, errors };
+}
+
 async function runImageScheduledJob(job: ScheduledJobRecord, db: WorkspaceDatabase): Promise<ScheduledJobExecutionResult> {
   const workspaceRootPath = getActiveWorkspaceRootPath();
   const prompt = db.savePrompt({
@@ -2154,122 +2274,59 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE, async (_event, payload: unknown) => {
     const input = ImageWorkspaceGenerateInputSchema.parse(payload);
-    const workspaceRootPath = getActiveWorkspaceRootPath();
-    const expectedDimensions = getImageDimensions(input.aspectRatio);
     return withActiveWorkspaceDb(async (db) => {
       const promptById = new Map(db.listPrompts().map((prompt) => [prompt.id, prompt]));
-      const prompts = input.promptIds.map((promptId) => promptById.get(promptId)).filter((prompt): prompt is NonNullable<typeof prompt> => Boolean(prompt));
+      const prompts = input.promptIds
+        .map((promptId) => promptById.get(promptId))
+        .filter((prompt): prompt is NonNullable<typeof prompt> => Boolean(prompt));
       if (prompts.length === 0) {
         throw new Error("未找到可生成图片的提示词");
       }
-      const targets =
-        input.targets.length > 0
-          ? input.targets
-          : [
-              {
-                provider: input.provider ?? (input.model.startsWith("mock") ? "mock" : "openai"),
-                model: input.model,
-                apiKeyId: null
-              }
-            ];
-      const jobs =
-        input.generationStrategy === "all_providers"
-          ? prompts.flatMap((prompt) => targets.map((target) => ({ prompt, target })))
-          : prompts.map((prompt, index) => ({ prompt, target: targets[index % targets.length] as (typeof targets)[number] }));
-      const settled = await mapWithConcurrency(
-        jobs,
-        getConfigDb().getSettings().providerConcurrencyLimit,
-        async ({ prompt, target }) => {
-          const config = getImageProviderConfig(target.provider);
-          const providerApiKey = await getImageApiKeyForTarget(target);
-          const provider = config ? createImageProviderFromConfig(config, providerApiKey) : null;
-          if (!provider) {
-            throw new Error(`图片 Provider 未配置：${target.provider}`);
-          }
-          if (provider.id !== "mock" && !providerApiKey) {
-            throw new Error(`未配置 ${provider.id} 图片 API key`);
-          }
-          const startedAt = new Date().toISOString();
-          try {
-            const generated = await provider.generate({
-              provider: provider.id,
-              model: target.model,
-              prompt: prompt.text,
-              count: input.perPromptCount,
-              ratio: input.aspectRatio,
-              apiKey: providerApiKey
-            });
-            db.saveApiCallLog({
-              provider: provider.id,
-              model: target.model,
-              workflow: "image_workspace",
-              status: "success",
-              startedAt,
-              finishedAt: new Date().toISOString(),
-              durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
-              inputTokens: null,
-              outputTokens: null,
-              totalTokens: null
-            });
-            const savedImages: ImageLibraryItem[] = [];
-            for (const generatedImage of generated.images) {
-              const providerSlug = provider.id.replace(/[^A-Za-z0-9._-]+/g, "-");
-              const fileName = `${prompt.id}-${providerSlug}-${generatedImage.id}.${generatedImage.extension}`;
-              const relativePath = path.posix.join("images", input.outputSubdir, fileName);
-              const absolutePath = path.join(workspaceRootPath, relativePath);
-              await mkdir(path.dirname(absolutePath), { recursive: true });
-              await writeFile(absolutePath, generatedImage.bytes);
-              savedImages.push(
-                toImageLibraryItem(
-                  db.saveImage({
-                    promptId: prompt.id,
-                    relativePath,
-                    scene: prompt.scene,
-                    width: generatedImage.width || expectedDimensions.width,
-                    height: generatedImage.height || expectedDimensions.height,
-                    aspectRatio: input.aspectRatio,
-                    sourceModel: `${generated.provider}/${generated.model}`,
-                    status: "active",
-                    generatedAt: new Date().toISOString()
-                  })
-                )
-              );
-            }
-            db.incrementPromptGeneratedCount(prompt.id, savedImages.length);
-            return savedImages;
-          } catch (error) {
-            db.saveApiCallLog({
-              provider: provider.id,
-              model: target.model,
-              workflow: "image_workspace",
-              status: "failed",
-              startedAt,
-              finishedAt: new Date().toISOString(),
-              durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
-              errorCode: providerErrorCode(error),
-              errorMessage: redactSensitiveText(error instanceof Error ? error.message : String(error))
-            });
-            throw error;
-          }
-        }
-      );
-      const savedImages = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
-      const errors = [
-        ...new Set(
-          settled
-            .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-            .map((result) => redactSensitiveText(result.reason instanceof Error ? result.reason.message : String(result.reason)))
-        )
-      ];
-      if (savedImages.length === 0 && errors.length > 0) {
-        throw new Error(errors[0]);
+      const result = await runImageWorkspaceGeneration(db, prompts, {
+        targets: input.targets,
+        provider: input.provider,
+        model: input.model,
+        generationStrategy: input.generationStrategy,
+        perPromptCount: input.perPromptCount,
+        aspectRatio: input.aspectRatio,
+        outputSubdir: input.outputSubdir
+      });
+      if (result.savedImages.length === 0 && result.errors.length > 0) {
+        throw new Error(result.errors[0]);
       }
-      return {
-        requested: jobs.length * input.perPromptCount,
-        savedImages,
-        failed: errors.length,
-        errors
-      };
+      return result;
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_ADHOC, async (_event, payload: unknown) => {
+    const input = ImageWorkspaceAdHocGenerateInputSchema.parse(payload);
+    const modeLabels: Record<string, string> = {
+      batch: "批量生产",
+      quick: "快速单图",
+      i2i: "图生图",
+      template: "模板套图"
+    };
+    return withActiveWorkspaceDb(async (db) => {
+      const promptRecords = input.prompts.map((item) =>
+        db.savePrompt({
+          text: item.text,
+          scene: input.scene,
+          status: "active",
+          notes: `图片工作室 · ${modeLabels[input.mode] ?? input.mode}${item.label ? ` · ${item.label}` : ""}`
+        })
+      );
+      const result = await runImageWorkspaceGeneration(db, promptRecords, {
+        targets: input.targets,
+        provider: input.provider,
+        model: input.model,
+        generationStrategy: input.generationStrategy,
+        perPromptCount: input.perPromptCount,
+        aspectRatio: input.aspectRatio,
+        outputSubdir: input.outputSubdir
+      });
+      if (result.savedImages.length === 0 && result.errors.length > 0) {
+        throw new Error(result.errors[0]);
+      }
+      return { ...result, promptIds: promptRecords.map((record) => record.id) };
     });
   });
   ipcMain.handle(IPC_CHANNELS.SCRIPTS_LIST, async () => withActiveWorkspaceDb((db) => db.listScripts()));
@@ -2927,6 +2984,12 @@ function registerLocalCacheProtocol(): void {
           return new Response(null, { status: 403 });
         }
       }
+    } else if (requestUrl.hostname === "workspace-image") {
+      if (!relativePath.startsWith("images/")) {
+        return new Response(null, { status: 403 });
+      }
+      rootPath = getActiveWorkspaceRootPath();
+      pathUnderRoot = relativePath;
     }
 
     if (!rootPath) {

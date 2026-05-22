@@ -11,6 +11,8 @@ import type {
   ImagePromptWorkspaceGenerateResult,
   ImageScenePreset,
   ImageScenePresetSaveInput,
+  ImageWorkspaceAdHocGenerateInput,
+  ImageWorkspaceAdHocGenerateResult,
   ImageWorkspaceGenerateInput,
   ImageWorkspaceGenerateResult
 } from "./image-workspace";
@@ -154,6 +156,7 @@ export const IPC_CHANNELS = {
   IMAGE_SCENE_PRESETS_LIST: "imageScenePresets:list",
   IMAGE_SCENE_PRESETS_SAVE: "imageScenePresets:save",
   IMAGE_WORKSPACE_GENERATE: "imageWorkspace:generate",
+  IMAGE_WORKSPACE_GENERATE_ADHOC: "imageWorkspace:generateAdHoc",
   SCRIPTS_LIST: "scripts:list",
   SCRIPTS_SAVE: "scripts:save",
   SCRIPTS_EXPORT: "scripts:export",
@@ -361,6 +364,10 @@ export interface IpcChannelMap {
   [IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE]: {
     request: ImageWorkspaceGenerateInput;
     response: ImageWorkspaceGenerateResult;
+  };
+  [IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_ADHOC]: {
+    request: ImageWorkspaceAdHocGenerateInput;
+    response: ImageWorkspaceAdHocGenerateResult;
   };
   [IPC_CHANNELS.SCRIPTS_LIST]: {
     request: undefined;
@@ -625,6 +632,7 @@ export interface RosterApi {
   listImageScenePresets(): Promise<ImageScenePreset[]>;
   saveImageScenePreset(input: ImageScenePresetSaveInput): Promise<ImageScenePreset>;
   generateImages(input: ImageWorkspaceGenerateInput): Promise<ImageWorkspaceGenerateResult>;
+  generateImagesAdHoc(input: ImageWorkspaceAdHocGenerateInput): Promise<ImageWorkspaceAdHocGenerateResult>;
   listScripts(): Promise<ScriptRecord[]>;
   saveScript(input: ScriptSaveInput): Promise<ScriptRecord>;
   exportScripts(input: ScriptExportInput): Promise<ScriptExportResult>;

@@ -12,6 +12,7 @@ import {
   type ImageSoftDeleteInput,
   type ImagePromptWorkspaceGenerateInput,
   type ImageScenePresetSaveInput,
+  type ImageWorkspaceAdHocGenerateInput,
   type ImageWorkspaceGenerateInput,
   type PlatformAccountSaveInput,
   type PromptSaveInput,
@@ -109,6 +110,8 @@ const api: RosterApi = {
   saveImageScenePreset: (input: ImageScenePresetSaveInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.IMAGE_SCENE_PRESETS_SAVE, input),
   generateImages: (input: ImageWorkspaceGenerateInput) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE, input),
+  generateImagesAdHoc: (input: ImageWorkspaceAdHocGenerateInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_ADHOC, input),
   listScripts: () => ipcRenderer.invoke(IPC_CHANNELS.SCRIPTS_LIST),
   saveScript: (input: ScriptSaveInput) => ipcRenderer.invoke(IPC_CHANNELS.SCRIPTS_SAVE, input),
   exportScripts: (input: ScriptExportInput) => ipcRenderer.invoke(IPC_CHANNELS.SCRIPTS_EXPORT, input),

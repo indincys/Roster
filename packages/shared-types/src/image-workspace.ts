@@ -83,6 +83,30 @@ export const ImageWorkspaceGenerateResultSchema = z.object({
   errors: z.array(z.string()).default([])
 });
 
+export const ImageWorkspaceModeSchema = z.enum(["batch", "quick", "i2i", "template"]);
+
+export const ImageWorkspaceAdHocPromptSchema = z.object({
+  text: z.string().trim().min(1),
+  label: z.string().trim().max(80).optional()
+});
+
+export const ImageWorkspaceAdHocGenerateInputSchema = z.object({
+  mode: ImageWorkspaceModeSchema.default("quick"),
+  scene: z.string().trim().min(1),
+  prompts: z.array(ImageWorkspaceAdHocPromptSchema).min(1).max(40),
+  provider: ProviderIdSchema.optional(),
+  model: z.string().trim().min(1).default("mock-image"),
+  targets: z.array(ImageWorkspaceProviderTargetSchema).optional().default([]),
+  generationStrategy: ImageWorkspaceGenerationStrategySchema.default("load_balance"),
+  aspectRatio: ImageSceneAspectRatioSchema.default("1:1"),
+  perPromptCount: z.number().int().min(1).max(8).default(2),
+  outputSubdir: ImageSceneOutputSubdirSchema.default("main")
+});
+
+export const ImageWorkspaceAdHocGenerateResultSchema = ImageWorkspaceGenerateResultSchema.extend({
+  promptIds: z.array(z.string())
+});
+
 export type ImagePromptWorkspaceModel = z.infer<typeof ImagePromptWorkspaceModelSchema>;
 export type ImageWorkspaceProviderTarget = z.infer<typeof ImageWorkspaceProviderTargetSchema>;
 export type ImageWorkspaceGenerationStrategy = z.infer<typeof ImageWorkspaceGenerationStrategySchema>;
@@ -94,3 +118,7 @@ export type ImagePromptWorkspaceGenerateInput = z.infer<typeof ImagePromptWorksp
 export type ImagePromptWorkspaceGenerateResult = z.infer<typeof ImagePromptWorkspaceGenerateResultSchema>;
 export type ImageWorkspaceGenerateInput = z.infer<typeof ImageWorkspaceGenerateInputSchema>;
 export type ImageWorkspaceGenerateResult = z.infer<typeof ImageWorkspaceGenerateResultSchema>;
+export type ImageWorkspaceMode = z.infer<typeof ImageWorkspaceModeSchema>;
+export type ImageWorkspaceAdHocPrompt = z.infer<typeof ImageWorkspaceAdHocPromptSchema>;
+export type ImageWorkspaceAdHocGenerateInput = z.infer<typeof ImageWorkspaceAdHocGenerateInputSchema>;
+export type ImageWorkspaceAdHocGenerateResult = z.infer<typeof ImageWorkspaceAdHocGenerateResultSchema>;
