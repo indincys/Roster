@@ -147,3 +147,4 @@ asarUnpack:
 - 不要在仓库中提交 `.p12`、`.pfx` 或证书密码。
 - 不要在 `electron-builder.yml` 中 hardcode 绝对路径。
 - 不要在 macOS target 中省略 `zip`。
+
