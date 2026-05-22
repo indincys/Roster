@@ -1,39 +1,39 @@
 /* ============================================================
-   图片工作室 — design system ported from Claude Design prototype.
+   图片工作室 - scoped design system.
    All selectors scoped under .image-studio to avoid collisions
    with the app-wide Tailwind layer.
    ============================================================ */
 
 .image-studio {
   /* Brand */
-  --brand: #c9613a;
-  --brand-ink: #a04c2a;
-  --brand-soft: #fbede3;
-  --brand-softer: #fdf6f0;
+  --brand: #339cff;
+  --brand-ink: #1377c5;
+  --brand-soft: #eaf5ff;
+  --brand-softer: #f6fbff;
 
-  --blue: #185fa5;
-  --blue-soft: #e5eef8;
-  --success: #1d9e75;
-  --success-soft: #e0f2eb;
-  --warn: #c28415;
-  --warn-soft: #f8efd9;
+  --blue: #339cff;
+  --blue-soft: #eaf5ff;
+  --success: #23876f;
+  --success-soft: #e4f4ef;
+  --warn: #9a7a12;
+  --warn-soft: #f7f0d7;
   --danger: #b84641;
-  --danger-soft: #f8e4e2;
+  --danger-soft: #f8e6e4;
 
-  /* Neutrals — warm off-white */
-  --bg: #faf7f2;
-  --bg-2: #f5f1ea;
+  /* Neutrals */
+  --bg: #f8fafc;
+  --bg-2: #f1f6fa;
   --panel: #ffffff;
-  --panel-2: #fbf8f3;
-  --line: #ebe4d9;
-  --line-strong: #dad0bf;
-  --line-faint: #f0eadf;
+  --panel-2: #fbfdff;
+  --line: #dfe8f2;
+  --line-strong: #cad8e7;
+  --line-faint: #eaf0f6;
 
-  --ink: #1b1a17;
-  --ink-2: #4a453e;
-  --ink-3: #807868;
-  --ink-4: #a89f8e;
-  --ink-5: #c5bcaa;
+  --ink: #1b202b;
+  --ink-2: #3f4858;
+  --ink-3: #6a7687;
+  --ink-4: #9aa7b6;
+  --ink-5: #c4ced8;
 
   --radius-sm: 4px;
   --radius: 6px;
@@ -42,9 +42,9 @@
 
   --pad-card: 18px;
 
-  --shadow-sm: 0 1px 2px rgba(28, 24, 18, 0.04);
-  --shadow: 0 1px 2px rgba(28, 24, 18, 0.04), 0 4px 16px -8px rgba(28, 24, 18, 0.08);
-  --shadow-lg: 0 8px 32px -12px rgba(28, 24, 18, 0.18), 0 2px 6px rgba(28, 24, 18, 0.06);
+  --shadow-sm: 0 1px 2px rgba(22, 32, 48, 0.04);
+  --shadow: 0 1px 2px rgba(22, 32, 48, 0.04), 0 4px 16px -8px rgba(22, 32, 48, 0.09);
+  --shadow-lg: 0 8px 32px -12px rgba(22, 32, 48, 0.18), 0 2px 6px rgba(22, 32, 48, 0.06);
 
   --is-mono: var(--font-mono);
   --is-serif: "Source Serif 4", "Noto Serif SC", "Songti SC", Georgia, serif;
@@ -368,7 +368,7 @@
 }
 .image-studio .pipe-conn.done { background: var(--success); }
 .image-studio .pipe-conn.active {
-  background: linear-gradient(90deg, var(--success), var(--brand));
+  background: var(--brand);
 }
 
 /* ============ WORK AREA ============ */
@@ -412,11 +412,62 @@
   font-weight: 500;
   transition: background 0.12s;
 }
-.image-studio .auto-run:hover { background: #198e68; }
+.image-studio .auto-run:hover { background: #1f7b66; }
 .image-studio .auto-run.running { background: var(--brand); }
 .image-studio .auto-run:disabled { opacity: 0.7; cursor: default; }
 
 /* ============ DATA SOURCE TABS ============ */
+.image-studio .entry-definition {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line-faint);
+}
+.image-studio .entry-definition-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.image-studio .entry-definition-desc {
+  margin-top: 2px;
+  max-width: 640px;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+.image-studio .entry-flow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 520px;
+  padding-top: 1px;
+  font-size: 11.5px;
+}
+.image-studio .flow-step {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.image-studio .flow-step.active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  font-weight: 600;
+}
+.image-studio .flow-arrow {
+  color: var(--ink-4);
+}
 .image-studio .ds-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -635,8 +686,8 @@
   color: #fff;
 }
 .image-studio .btn.success:hover {
-  background: #198e68;
-  border-color: #198e68;
+  background: #1f7b66;
+  border-color: #1f7b66;
 }
 .image-studio .btn.ghost {
   background: transparent;
@@ -1321,7 +1372,7 @@
 }
 .image-studio .prog-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--brand), #e08a5c);
+  background: var(--brand);
   transition: width 0.4s ease;
 }
 .image-studio .prog-fill.indeterminate {

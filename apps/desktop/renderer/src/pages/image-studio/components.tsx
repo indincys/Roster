@@ -121,7 +121,7 @@ export function Tile({
   onCompare
 }: TileProps): JSX.Element {
   return (
-    <div className={cn("tile", selected && "selected")}>
+    <div className={cn("tile", selected && "selected")} data-image-card={image?.id}>
       <div
         className={cn("ar", aspectClass(ratio))}
         onClick={reviewMode && onSelectToggle ? onSelectToggle : undefined}
@@ -157,6 +157,7 @@ export function Tile({
             <button
               type="button"
               className={cn("checkbox", selected && "checked")}
+              data-select-image={image?.id}
               onClick={(event) => {
                 event.stopPropagation();
                 onSelectToggle?.();
@@ -171,6 +172,7 @@ export function Tile({
               <button
                 type="button"
                 className="ha-btn"
+                data-detail-image={image?.id}
                 onClick={(event) => {
                   event.stopPropagation();
                   onDetail();
@@ -183,6 +185,7 @@ export function Tile({
               <button
                 type="button"
                 className="ha-btn"
+                data-regenerate-image={image?.id}
                 onClick={(event) => {
                   event.stopPropagation();
                   onRegen();

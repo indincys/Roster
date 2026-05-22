@@ -2,40 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
-/* pillar — warm clay/red palette ported from design/styles.css (oklch → HSL approximations) */
+/* Productivity SaaS palette */
 :root {
-  --background: 45 30% 97%;
-  --bg-soft: 42 25% 94%;
-  --foreground: 30 10% 18%;
-  --foreground-soft: 30 8% 32%;
+  --background: 210 30% 98%;
+  --bg-soft: 210 32% 95%;
+  --foreground: 222 20% 16%;
+  --foreground-soft: 218 11% 34%;
   --card: 0 0% 100%;
-  --card-foreground: 30 10% 18%;
-  --panel-2: 40 20% 96%;
+  --card-foreground: 222 20% 16%;
+  --panel-2: 210 38% 97%;
 
-  --primary: 17 60% 60%;
+  --primary: 209 100% 60%;
   --primary-foreground: 0 0% 100%;
-  --primary-soft: 28 60% 95%;
-  --primary-strong: 13 65% 50%;
+  --primary-soft: 207 100% 96%;
+  --primary-strong: 207 76% 43%;
 
-  --muted: 42 25% 94%;
-  --muted-foreground: 40 4% 46%;
-  --muted-foreground-2: 40 3% 62%;
+  --muted: 210 28% 94%;
+  --muted-foreground: 215 11% 45%;
+  --muted-foreground-2: 215 9% 62%;
 
-  --border: 42 8% 88%;
-  --border-2: 40 8% 93%;
-  --input: 42 8% 88%;
-  --ring: 13 65% 50%;
+  --border: 210 24% 88%;
+  --border-2: 210 26% 93%;
+  --input: 210 24% 88%;
+  --ring: 209 100% 60%;
 
-  --destructive: 0 65% 55%;
+  --destructive: 0 61% 49%;
   --destructive-foreground: 0 0% 100%;
-  --destructive-soft: 8 65% 95%;
+  --destructive-soft: 0 72% 96%;
 
-  --success: 150 40% 42%;
-  --success-soft: 150 30% 93%;
-  --warning: 40 70% 50%;
-  --warning-soft: 48 60% 94%;
-  --info: 220 50% 52%;
-  --info-soft: 220 50% 93%;
+  --success: 166 52% 34%;
+  --success-soft: 162 48% 94%;
+  --warning: 48 72% 42%;
+  --warning-soft: 48 78% 94%;
+  --info: 209 100% 60%;
+  --info-soft: 207 100% 96%;
 
   --topbar-h: 48px;
   --sidebar-w: 232px;
@@ -75,7 +75,15 @@ select {
   background: hsl(var(--primary) / 0.18);
 }
 
-/* ───────── Design-system utility classes (from design/styles.css) ───────── */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid hsl(var(--ring) / 0.72);
+  outline-offset: 2px;
+}
+
+/* Design-system utility classes */
 
 .font-mono,
 .mono {
@@ -127,6 +135,36 @@ select {
 .status-pill.sp-off {
   background: hsl(var(--bg-soft));
   color: hsl(var(--muted-foreground-2));
+}
+
+.bg-amber-50 {
+  background-color: hsl(var(--warning-soft));
+}
+
+.bg-amber-50\/70 {
+  background-color: hsl(var(--warning-soft) / 0.7);
+}
+
+.text-amber-700,
+.text-amber-800 {
+  color: hsl(var(--warning));
+}
+
+.border-amber-200 {
+  border-color: hsl(48 52% 78%);
+}
+
+.bg-blue-50 {
+  background-color: hsl(var(--info-soft));
+}
+
+.text-blue-700,
+.text-blue-800 {
+  color: hsl(var(--primary-strong));
+}
+
+.border-blue-200 {
+  border-color: hsl(207 65% 82%);
 }
 
 .chip {

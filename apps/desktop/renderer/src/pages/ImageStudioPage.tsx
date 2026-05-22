@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
+  CalendarClock,
   Check,
   ChevronDown,
   Eye,
@@ -85,12 +86,14 @@ function StudioHead({
   pendingCount,
   sceneCount,
   autoRunning,
+  onCreateSchedule,
   onAutoRun
 }: {
   totalImages: number;
   pendingCount: number;
   sceneCount: number;
   autoRunning: boolean;
+  onCreateSchedule: () => void;
   onAutoRun: () => void;
 }): JSX.Element {
   return (
@@ -119,6 +122,10 @@ function StudioHead({
             <b>{sceneCount}</b>
           </div>
         </div>
+        <button type="button" className="btn ghost" onClick={onCreateSchedule} data-create-image-schedule>
+          <CalendarClock size={13} />
+          定时
+        </button>
         <button
           type="button"
           className={cn("auto-run", autoRunning && "running")}
@@ -238,7 +245,7 @@ function ContextStrip({
           <span className="key">Skill</span>
           <span className="val mono">{skillName}</span>
         </button>
-        <button type="button" className="ctx-chip" onClick={onOpenSceneConfig} title="输出目录">
+        <button type="button" className="ctx-chip" onClick={onOpenSceneConfig} title="输出目录" data-image-scene-preset-summary>
           <Folder size={12} className="ico" />
           <span className="val mono">{outputDir}</span>
         </button>
@@ -325,36 +332,67 @@ function SeedStage(props: SeedStageProps): JSX.Element {
     <div className="stage">
       <StageHead
         eyebrow={props.eyebrow}
-        title={isText ? "用一句自然语言，描述你想生成的画面" : "从本地文件夹按 SKU 批量装载素材"}
+        title={isText ? "入口 A：文本种子生成提示词" : "入口 B：本地图片 / SKU 批量出图"}
         desc={
           isText
-            ? "系统会把它扩写成 N 条结构化图片提示词。建议交代品类、场景、构图、情绪，并留出风格空间。"
-            : "按 SKU 子文件夹批量装载，每个 SKU 作为独立分组，生成结果按 SKU 归档，便于后续导出。"
+            ? "批量生产有两个并列入口。文本种子会先扩写成 N 条结构化提示词，再进入提示词确认、图片生成和验收。"
+            : "批量生产有两个并列入口。本地图片 / SKU 会跳过提示词扩写，直接按 SKU 参考素材进入图片生成和验收。"
         }
       />
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="entry-definition">
+          <div>
+            <div className="entry-definition-title">批量生产入口（二选一）</div>
+            <div className="entry-definition-desc">
+              文本种子和本地图片 / SKU 不是上下游关系；它们是同一个批量生产模式下的两条起点，后续都会进入图片生成和验收。
+            </div>
+          </div>
+          <div className="entry-flow" aria-label={isText ? "文本种子流程" : "本地图片 SKU 流程"}>
+            {isText ? (
+              <>
+                <span className="flow-step active">文本种子</span>
+                <span className="flow-arrow">→</span>
+                <span className="flow-step">提示词确认</span>
+                <span className="flow-arrow">→</span>
+                <span className="flow-step">图片生成</span>
+                <span className="flow-arrow">→</span>
+                <span className="flow-step">验收溯源</span>
+              </>
+            ) : (
+              <>
+                <span className="flow-step active">SKU 素材装载</span>
+                <span className="flow-arrow">→</span>
+                <span className="flow-step">图片生成</span>
+                <span className="flow-arrow">→</span>
+                <span className="flow-step">验收溯源</span>
+              </>
+            )}
+          </div>
+        </div>
         <div className="ds-tabs">
           <button
             type="button"
             className={cn("ds-tab", isText && "active")}
             onClick={() => props.onChangeDataSource("text")}
+            aria-pressed={isText}
           >
             <Sparkles size={14} />
             <div>
-              <div className="ds-tab-name">文本种子</div>
-              <div className="ds-tab-sub">写一句话，AI 扩写成 N 条提示词</div>
+              <div className="ds-tab-name">入口 A · 文本种子</div>
+              <div className="ds-tab-sub">从一句话生成提示词，再批量出图</div>
             </div>
           </button>
           <button
             type="button"
             className={cn("ds-tab", !isText && "active")}
             onClick={() => props.onChangeDataSource("folder")}
+            aria-pressed={!isText}
           >
             <Folder size={14} />
             <div>
-              <div className="ds-tab-name">本地图片 · SKU 批量</div>
-              <div className="ds-tab-sub">读取文件夹，按 SKU 子目录批量出图</div>
+              <div className="ds-tab-name">入口 B · 本地图片 / SKU</div>
+              <div className="ds-tab-sub">按 SKU 参考素材直接批量出图</div>
             </div>
           </button>
         </div>
@@ -386,6 +424,7 @@ function SeedStage(props: SeedStageProps): JSX.Element {
                   value={props.skillId}
                   onChange={(event) => props.onSkill(event.target.value)}
                   data-image-prompt-skill
+                  data-image-prompt-skill-select
                 >
                   {props.skills.length === 0 ? <option value="">未启用图片提示词 Skill</option> : null}
                   {props.skills.map((skill) => (
@@ -473,6 +512,7 @@ function SeedStage(props: SeedStageProps): JSX.Element {
             disabled={!canGenerate || props.busy}
             onClick={props.onGenerate}
             data-image-seed-generate
+            data-generate-image-prompts
           >
             {isText ? (
               <>
@@ -673,7 +713,7 @@ function PromptConfirmStage({
           const isSelected = selected.has(draft.id);
           const isEditing = editingId === draft.id;
           return (
-            <div key={draft.id} className={cn("prompt-row", isSelected && "selected")}>
+            <div key={draft.id} className={cn("prompt-row", isSelected && "selected")} data-draft-image-prompt>
               <span className={cn("checkbox", isSelected && "checked")} onClick={() => onToggle(draft.id)} />
               <div className="pr-num">#{String(index + 1).padStart(2, "0")}</div>
               {isEditing ? (
@@ -710,12 +750,14 @@ function PromptConfirmStage({
       </div>
 
       <div className="row" style={{ justifyContent: "space-between" }}>
+        <span className="small mute">此步骤未调用图片 API</span>
         <BackButton onClick={onBack} />
         <button
           type="button"
           className="btn primary lg"
           disabled={selected.size === 0 || busy}
           onClick={onConfirm}
+          data-save-image-prompts
         >
           确认，开始出图（{total} 张）
           <ArrowRight size={14} />
@@ -1176,7 +1218,7 @@ function GenerationStage({
         desc="每张图都会标注来源标签，便于验收阶段溯源。生成期间请不要切换场景。"
         actions={
           done ? (
-            <button type="button" className="btn primary" onClick={onReview}>
+            <button type="button" className="btn primary" onClick={onReview} data-enter-image-review>
               进入验收
               <ArrowRight size={13} />
             </button>
@@ -1189,7 +1231,7 @@ function GenerationStage({
             <span style={{ fontSize: 13, fontWeight: 600 }}>
               {done ? "已完成" : status === "error" ? "已中断" : "出图中"}
             </span>
-            <span className="mono small mute">
+            <span className="mono small mute" data-image-generation-progress>
               {images.length} / {Math.max(expectedCount, images.length)}
             </span>
           </div>
@@ -1387,6 +1429,7 @@ function ReviewStage({
               <button
                 type="button"
                 className="btn xs success"
+                data-batch-approve-images
                 onClick={() => {
                   onApproveMany([...selected]);
                   setSelected(new Set());
@@ -1397,6 +1440,7 @@ function ReviewStage({
               <button
                 type="button"
                 className="btn xs danger"
+                data-batch-reject-images
                 onClick={() => {
                   onRejectMany([...selected]);
                   setSelected(new Set());
@@ -1733,6 +1777,7 @@ function RegenDrawer({
             className="btn primary"
             disabled={busy}
             onClick={() => onConfirm(mode === "tweak" ? tweak : null)}
+            data-confirm-image-regenerate
           >
             <Sparkles size={13} />
             开始生成变体
@@ -1913,12 +1958,14 @@ function CompareView({
 function SceneDrawer({
   skills,
   imageModels,
+  basePreset,
   busy,
   onClose,
   onSave
 }: {
   skills: SkillRecord[];
   imageModels: ImageModelOption[];
+  basePreset: ImageScenePreset | null;
   busy: boolean;
   onClose: () => void;
   onSave: (input: {
@@ -1931,11 +1978,11 @@ function SceneDrawer({
   }) => void;
 }): JSX.Element {
   const [name, setName] = useState("");
-  const [skillId, setSkillId] = useState(skills[0]?.id ?? "");
-  const [ratio, setRatio] = useState<ImageSceneAspectRatio>("3:4");
-  const [perPrompt, setPerPrompt] = useState(2);
-  const [outputSubdir, setOutputSubdir] = useState<ImageSceneOutputSubdir>("main");
-  const [imageModel, setImageModel] = useState(imageModels[0]?.model ?? "mock-image");
+  const [skillId, setSkillId] = useState(basePreset?.skillId ?? skills[0]?.id ?? "");
+  const [ratio, setRatio] = useState<ImageSceneAspectRatio>(basePreset?.defaultAspectRatio ?? "3:4");
+  const [perPrompt, setPerPrompt] = useState(basePreset?.defaultPerPromptCount ?? 2);
+  const [outputSubdir, setOutputSubdir] = useState<ImageSceneOutputSubdir>(basePreset?.defaultOutputSubdir ?? "main");
+  const [imageModel, setImageModel] = useState(basePreset?.defaultImageModel ?? imageModels[0]?.model ?? "mock-image");
   return (
     <Drawer
       title="新增场景"
@@ -1952,6 +1999,7 @@ function SceneDrawer({
             type="button"
             className="btn primary"
             disabled={!name.trim() || busy}
+            data-create-image-scene
             onClick={() =>
               onSave({
                 name: name.trim(),
@@ -1999,6 +2047,7 @@ function SceneDrawer({
             className="input"
             value={ratio}
             onChange={(event) => setRatio(event.target.value as ImageSceneAspectRatio)}
+            data-image-aspect-ratio
           >
             {ASPECT_RATIOS.map((value) => (
               <option key={value} value={value}>
@@ -2637,7 +2686,7 @@ export function ImageStudioPage(): JSX.Element {
       }
       setImages(nextImages);
       setPrompts(nextPrompts);
-      setMessage(`已生成 ${freshIds.length} 张变体`);
+      setMessage(`已再生成并入库 ${freshIds.length} 张变体`);
     } catch (error) {
       setMessage(`变体生成失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -2697,6 +2746,7 @@ export function ImageStudioPage(): JSX.Element {
         await window.roster.softDeleteImage({ imageId: image.id });
       }
       await loadData();
+      setMessage(`已批量拒绝 ${targets.length} 张图片`);
     } catch (error) {
       setMessage(`批量拒绝失败：${error instanceof Error ? error.message : String(error)}`);
     }
@@ -2759,6 +2809,23 @@ export function ImageStudioPage(): JSX.Element {
     }
   }
 
+  async function handleCreateScheduleEntry(): Promise<void> {
+    try {
+      const saved = await window.roster.saveScheduledJob({
+        name: "图片生成定时",
+        type: "image_generation",
+        status: "enabled",
+        scheduleLabel: "每 60 秒",
+        nextRunAt: new Date(Date.now() + 60_000).toISOString(),
+        missedRunPolicy: "catch_up_last",
+        targetPage: "images"
+      });
+      setMessage(`已创建定时任务：${saved.name}`);
+    } catch (error) {
+      setMessage(`创建定时任务失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   async function handleSaveScene(input: {
     name: string;
     skillId: string | null;
@@ -2774,7 +2841,7 @@ export function ImageStudioPage(): JSX.Element {
       setScenePresets(presets);
       setScenePresetId(saved.id);
       setSceneDrawerOpen(false);
-      setMessage(`已新增场景：${saved.name}`);
+      setMessage(`已新增场景预设：${saved.name}`);
     } catch (error) {
       setMessage(`新增场景失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -3062,6 +3129,7 @@ export function ImageStudioPage(): JSX.Element {
         pendingCount={reviewStats.pending}
         sceneCount={scenePresets.length}
         autoRunning={autoRunning}
+        onCreateSchedule={() => void handleCreateScheduleEntry()}
         onAutoRun={() => void handleAutoRun()}
       />
       <SceneTabs
@@ -3171,6 +3239,7 @@ export function ImageStudioPage(): JSX.Element {
         <SceneDrawer
           skills={skills}
           imageModels={imageModelOptions}
+          basePreset={selectedPreset}
           busy={busy}
           onClose={() => setSceneDrawerOpen(false)}
           onSave={(input) => void handleSaveScene(input)}

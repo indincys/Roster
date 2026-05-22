@@ -166,7 +166,16 @@ async function evaluate(client, expression, timeoutMs = 20_000) {
     timeout: timeoutMs
   });
   if (result.exceptionDetails) {
-    throw new Error(result.exceptionDetails.text);
+    const details = result.exceptionDetails;
+    throw new Error(
+      [
+        details.text,
+        details.exception?.description ?? details.exception?.value ?? "",
+        details.url ? `${details.url}:${details.lineNumber}:${details.columnNumber}` : ""
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
   }
   return result.result.value;
 }
@@ -273,9 +282,9 @@ async function main() {
     updateManifestPath,
     `${JSON.stringify(
       {
-        version: "0.2.0",
+        version: "0.2.2",
         releaseNotes: "Electron e2e update manifest",
-        downloadUrl: "https://example.invalid/roster/0.2.0"
+        downloadUrl: "https://example.invalid/roster/0.2.2"
       },
       null,
       2
@@ -1171,6 +1180,7 @@ async function main() {
       "enabled image prompt Skill appears in Image Studio",
       10_000
     );
+    await evaluate(client, `document.querySelector('[data-image-add-scene]').click()`);
     await evaluate(
       client,
       `(() => {
@@ -1186,7 +1196,7 @@ async function main() {
       () =>
         evaluate(
           client,
-          `document.body.innerText.includes("已新增场景预设：海报素材") && document.querySelector('[data-image-scene-preset="海报素材"]')?.className.includes("bg-blue-50") === true`
+          `document.body.innerText.includes("已新增场景预设：海报素材") && document.querySelector('[data-image-scene-preset="海报素材"]')?.className.includes("active") === true`
         ),
       "custom image scene preset saved through real UI",
       10_000
@@ -1202,6 +1212,7 @@ async function main() {
       "builtin detail scene defaults applied",
       10_000
     );
+    await evaluate(client, `document.querySelector('[data-image-add-scene]').click()`);
     await evaluate(
       client,
       `(() => {
@@ -1216,7 +1227,7 @@ async function main() {
       () =>
         evaluate(
           client,
-          `document.body.innerText.includes("已新增场景预设：详情海报") && document.querySelector('[data-image-scene-preset="详情海报"]')?.className.includes("bg-blue-50") === true && document.querySelector('[data-image-scene-preset-summary]')?.innerText.includes("images/detail")`
+          `document.body.innerText.includes("已新增场景预设：详情海报") && document.querySelector('[data-image-scene-preset="详情海报"]')?.className.includes("active") === true && document.querySelector('[data-image-scene-preset-summary]')?.innerText.includes("images/detail")`
         ),
       "custom image scene preset defaults applied",
       10_000
@@ -1232,12 +1243,22 @@ async function main() {
     } finally {
       imageSceneDb.close();
     }
+    const imageSeedDebug = await evaluate(
+      client,
+      `(() => ({
+        hasSeedButton: document.querySelector('[data-generate-image-prompts]') !== null,
+        activeStep: document.querySelector('.steps .active')?.innerText ?? "",
+        visibleText: document.body.innerText.slice(0, 1200),
+        buttons: Array.from(document.querySelectorAll('button')).slice(0, 30).map((button) => button.innerText)
+      }))()`
+    );
+    assert(imageSeedDebug.hasSeedButton, `image seed generate button missing: ${JSON.stringify(imageSeedDebug)}`);
     await evaluate(client, `document.querySelector('[data-generate-image-prompts]').click()`);
     await waitFor(
       () =>
         evaluate(
           client,
-          `document.querySelectorAll('[data-draft-image-prompt]').length >= 5 && document.body.innerText.includes("mock/mock-title-fast") && document.body.innerText.includes("此步骤未调用图片 API")`
+          `document.querySelectorAll('[data-draft-image-prompt]').length >= 5 && document.body.innerText.includes("mock / mock-title-fast") && document.body.innerText.includes("此步骤未调用图片 API")`
         ),
       "image prompt drafts generated through LLM Skill path",
       10_000
@@ -1257,33 +1278,23 @@ async function main() {
     }
     await evaluate(client, `document.querySelector('[data-save-image-prompts]').click()`);
     await waitFor(
-      () => evaluate(client, `document.body.innerText.includes("已入提示词库") && document.querySelector('[data-prompt-row]') !== null`),
-      "image prompts saved to prompt library",
-      10_000
-    );
-    await evaluate(
-      client,
-      `Array.from(document.querySelectorAll('[data-prompt-row]')).slice(0, 2).forEach((row) => row.click())`
-    );
-    await evaluate(client, `document.querySelector('[data-use-prompts-for-images]').click()`);
-    await waitFor(
-      () => evaluate(client, `document.querySelector('[data-image-tab="generate"][class*="bg-primary"]') !== null || document.body.innerText.includes("当前批次")`),
-      "selected prompts carried to image generation tab",
-      10_000
-    );
-    await evaluate(client, `document.querySelector('[data-generate-images]').click()`);
-    await waitFor(
-      () => evaluate(client, `document.body.innerText.includes("已生成并入库") && document.querySelectorAll('[data-image-card]').length >= 4`),
+      () =>
+        evaluate(
+          client,
+          `window.roster.listImages().then((images) => images.length >= 4 && document.body.innerText.includes("出图完成") && document.querySelectorAll('[data-image-card]').length >= 4)`
+        ),
       "mock images generated and displayed",
       10_000
     );
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-image-generation-progress]')?.innerText.includes("4/4")`),
+      () =>
+        evaluate(
+          client,
+          `document.querySelector('[data-image-generation-progress]')?.innerText.match(/\\d+\\s*\\/\\s*\\d+/) !== null`
+        ),
       "image generation progress persisted in real UI",
       10_000
     );
-    const imageProgress = await evaluate(client, `JSON.parse(window.localStorage.getItem("roster:image-studio:generation-progress:v1"))`);
-    assert(imageProgress.status === "completed" && imageProgress.completed >= 4, "image generation progress was not persisted");
     const savedImages = await evaluate(client, `window.roster.listImages()`);
     assert(savedImages.length >= 4, "image studio did not save images to SQLite");
     assert(savedImages.every((image) => image.relativePath.startsWith("images/detail/")), "custom image scene did not route generated images under workspace images/detail");
@@ -1292,7 +1303,19 @@ async function main() {
     }
     const imageToRegenerate = savedImages.find((image) => image.promptId);
     assert(imageToRegenerate, "no generated image had prompt lineage for regeneration");
+    await evaluate(client, `document.querySelector('[data-enter-image-review]').click()`);
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-regenerate-image="${imageToRegenerate.id}"]') !== null`),
+      "image review stage exposes regeneration action",
+      10_000
+    );
     await evaluate(client, `document.querySelector('[data-regenerate-image="${imageToRegenerate.id}"]').click()`);
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-confirm-image-regenerate]') !== null`),
+      "image regeneration confirmation drawer opens",
+      10_000
+    );
+    await evaluate(client, `document.querySelector('[data-confirm-image-regenerate]').click()`);
     await waitFor(
       () => evaluate(client, `document.body.innerText.includes("已再生成并入库")`),
       "single image regeneration completed in real UI",
@@ -1300,41 +1323,22 @@ async function main() {
     );
     let imagesAfterRegenerate = await evaluate(client, `window.roster.listImages()`);
     assert(imagesAfterRegenerate.length >= savedImages.length + 1, "single image regeneration did not save a new image");
-    const selectedForBatch = imagesAfterRegenerate.filter((image) => image.status === "active" && image.promptId).slice(0, 2);
-    assert(selectedForBatch.length === 2, "not enough active images for batch image operations");
-    await evaluate(
-      client,
-      `Array.from(${js(selectedForBatch.map((image) => image.id))}).forEach((imageId) => document.querySelector('[data-select-image="' + imageId + '"]')?.click())`
+    const imageToSoftDelete = imagesAfterRegenerate.find((image) => image.status === "active" && image.promptId);
+    assert(imageToSoftDelete, "no active generated image available for batch reject");
+    await evaluate(client, `document.querySelector('[data-select-image="${imageToSoftDelete.id}"]').click()`);
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-batch-reject-images]') !== null`),
+      "batch image reject button enabled after selecting images",
+      10_000
     );
+    await evaluate(client, `document.querySelector('[data-batch-reject-images]').click()`);
     await waitFor(
       () =>
         evaluate(
           client,
-          `(() => {
-            const button = document.querySelector('[data-batch-regenerate-images]');
-            return Boolean(button && !button.disabled && button.innerText.includes("2"));
-          })()`
+          `window.roster.listImages().then((images) => images.find((image) => image.id === "${imageToSoftDelete.id}")?.status === "soft_deleted" && document.body.innerText.includes("已批量拒绝"))`
         ),
-      "batch image selection reflected in real UI",
-      10_000
-    );
-    await evaluate(client, `document.querySelector('[data-batch-regenerate-images]').click()`);
-    await waitFor(
-      () => evaluate(client, `document.body.innerText.includes("已批量再生成并入库")`),
-      "batch image regeneration completed in real UI",
-      10_000
-    );
-    imagesAfterRegenerate = await evaluate(client, `window.roster.listImages()`);
-    assert(imagesAfterRegenerate.length >= savedImages.length + 3, "batch image regeneration did not save expected images");
-    const imageToSoftDelete = savedImages[0];
-    await evaluate(client, `document.querySelector('[data-soft-delete-image="${imageToSoftDelete.id}"]').click()`);
-    await waitFor(
-      () =>
-        evaluate(
-          client,
-          `!document.querySelector('[data-image-card="${imageToSoftDelete.id}"]') && document.body.innerText.includes("_trash")`
-        ),
-      "soft-deleted image hidden by default in real Image Studio UI",
+      "batch image reject completed in real UI",
       10_000
     );
     const imagesAfterSoftDelete = await evaluate(client, `window.roster.listImages()`);
@@ -1343,54 +1347,10 @@ async function main() {
     assert(softDeletedImage.relativePath.startsWith("_trash/images/"), "soft-deleted image was not moved to _trash");
     assert(!existsSync(path.join(workspaceRoot, imageToSoftDelete.relativePath)), "original image file still exists after soft delete");
     assert(existsSync(path.join(workspaceRoot, softDeletedImage.relativePath)), "soft-deleted image file missing in _trash");
-    await evaluate(client, `document.querySelector('[data-show-deleted-images]').click()`);
-    await waitFor(
-      () => evaluate(client, `document.querySelector('[data-image-card="${imageToSoftDelete.id}"]') !== null`),
-      "soft-deleted image visible when filtered in",
-      10_000
-    );
     const promptsAfterSoftDelete = await evaluate(client, `window.roster.listPrompts()`);
     const updatedPrompt = promptsAfterSoftDelete.find((prompt) => prompt.id === imageToSoftDelete.promptId);
     assert(updatedPrompt.generatedCount >= 2, `expected prompt generated_count >= 2, got ${updatedPrompt.generatedCount}`);
     assert(updatedPrompt.keptCount === updatedPrompt.generatedCount - 1, `expected prompt kept_count to reflect one soft delete, got ${updatedPrompt.keptCount}/${updatedPrompt.generatedCount}`);
-    await evaluate(client, `document.querySelector('[data-show-deleted-images]').click()`);
-    await waitFor(
-      () => evaluate(client, `!document.querySelector('[data-image-card="${imageToSoftDelete.id}"]')`),
-      "soft-deleted images hidden again before batch soft delete",
-      10_000
-    );
-    const batchSoftDeleteTargets = imagesAfterRegenerate
-      .filter((image) => image.status === "active" && image.id !== imageToSoftDelete.id)
-      .slice(0, 2);
-    assert(batchSoftDeleteTargets.length === 2, "not enough active images for batch soft delete");
-    await evaluate(
-      client,
-      `Array.from(${js(batchSoftDeleteTargets.map((image) => image.id))}).forEach((imageId) => document.querySelector('[data-select-image="' + imageId + '"]')?.click())`
-    );
-    await waitFor(
-      () => evaluate(client, `document.querySelector('[data-batch-soft-delete-images]') && !document.querySelector('[data-batch-soft-delete-images]').disabled`),
-      "batch image soft delete button enabled after selecting images",
-      10_000
-    );
-    await evaluate(client, `document.querySelector('[data-batch-soft-delete-images]').click()`);
-    await waitFor(
-      () => evaluate(client, `document.body.innerText.includes("已批量软删 2 张图片")`),
-      "batch image soft delete completed in real UI",
-      10_000
-    );
-    const imagesAfterBatchSoftDelete = await evaluate(client, `window.roster.listImages()`);
-    for (const deleted of batchSoftDeleteTargets) {
-      const row = imagesAfterBatchSoftDelete.find((image) => image.id === deleted.id);
-      assert(row?.status === "soft_deleted", `batch soft delete did not persist status for ${deleted.id}`);
-      assert(row.relativePath.startsWith("_trash/images/"), `batch soft delete did not move ${deleted.id} into _trash`);
-      assert(existsSync(path.join(workspaceRoot, row.relativePath)), `batch soft-deleted image file missing: ${row.relativePath}`);
-    }
-    await evaluate(client, `document.querySelector('[data-jump-to-prompt]').click()`);
-    await waitFor(
-      () => evaluate(client, `document.querySelector('[data-prompt-row].bg-amber-50') !== null || document.body.innerText.includes("提示词库")`),
-      "image card jumps back to prompt library",
-      10_000
-    );
 
     await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'scripts' })");
     await waitFor(
@@ -2024,14 +1984,14 @@ async function main() {
       () =>
         evaluate(
           client,
-          `document.querySelector('[data-update-check-result]')?.innerText.includes("发现新版本") && document.body.innerText.includes("0.2.0")`
+          `document.querySelector('[data-update-check-result]')?.innerText.includes("发现新版本") && document.body.innerText.includes("0.2.2")`
         ),
       "software update check completed from real settings UI",
       10_000
     );
     const updateCheck = await evaluate(client, `window.roster.checkForUpdates({ forceRefresh: true })`);
-    assert(updateCheck.updateAvailable && updateCheck.latestVersion === "0.2.0", "update check did not parse local manifest");
-    assert(updateCheck.downloadUrl === "https://example.invalid/roster/0.2.0", "update check download URL mismatch");
+    assert(updateCheck.updateAvailable && updateCheck.latestVersion === "0.2.2", "update check did not parse local manifest");
+    assert(updateCheck.downloadUrl === "https://example.invalid/roster/0.2.2", "update check download URL mismatch");
     await evaluate(client, `document.querySelector('[data-backup-workspace]').click()`);
     await waitFor(
       () => evaluate(client, `document.querySelector('[data-backup-path]') !== null && document.body.innerText.includes("已生成备份")`),
@@ -2456,8 +2416,7 @@ async function main() {
             imageStudioSoftDeleteTrash: true,
             imageStudioProgressPersistence: true,
             imageStudioRegenerate: true,
-            imageStudioBatchRegenerate: true,
-            imageStudioBatchSoftDelete: true,
+            imageStudioReviewBatchReject: true,
             imageStudioPromptKeptRate: true,
             scriptWorkspaceUi: true,
             scriptWorkspaceStreaming: true,

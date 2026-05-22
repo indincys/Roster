@@ -38,8 +38,8 @@ export function installPreviewStub(): void {
     workspace: {
       activeWorkspaceId: "ws_warmlife",
       workspaces: [
-        makeWorkspace("ws_warmlife", "暖心生活 · 主品牌", "#D97757", "/preview/warmlife"),
-        makeWorkspace("ws_pillar", "pillar 设计 · 配饰线", "#7A5AE0", "/preview/pillar")
+        makeWorkspace("ws_warmlife", "暖心生活 · 主品牌", "#339CFF", "/preview/warmlife"),
+        makeWorkspace("ws_pillar", "pillar 设计 · 配饰线", "#6C7A89", "/preview/pillar")
       ]
     },
     apiKeys: []

@@ -50,18 +50,18 @@ export function stagesFor(mode: StudioMode, dataSource: DataSource): string[] {
 
 /* ---- placeholder gradient art ---- */
 export const PALETTES: Array<[string, string]> = [
-  ["#D9846A", "#7C3A2A"],
-  ["#E2B07F", "#8A5D3C"],
-  ["#3F5B79", "#1E2F44"],
-  ["#A6BCC7", "#4F6975"],
-  ["#D6B5A0", "#7A5A48"],
-  ["#C9613A", "#5C2415"],
-  ["#6E8E80", "#2E433A"],
-  ["#E5C29A", "#9D6E3A"],
-  ["#4F4F58", "#1B1B22"],
-  ["#B57E72", "#5C322A"],
-  ["#7B9C8A", "#3A5247"],
-  ["#D4A77B", "#6E4527"]
+  ["#339CFF", "#155A92"],
+  ["#7DA7C7", "#35566F"],
+  ["#8DB7A6", "#335B50"],
+  ["#A7B3C2", "#4D5B6B"],
+  ["#6C7A89", "#2F3945"],
+  ["#B7C5D6", "#5B6E82"],
+  ["#6BA9D8", "#24658F"],
+  ["#9CB8A5", "#426551"],
+  ["#B9C8CC", "#5B7176"],
+  ["#7F8BA3", "#363F52"],
+  ["#C3B9A7", "#655D50"],
+  ["#98A5C4", "#49546E"]
 ];
 
 export function paletteFor(key: string): [string, string] {
