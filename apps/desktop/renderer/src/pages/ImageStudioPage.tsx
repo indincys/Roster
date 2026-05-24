@@ -22,15 +22,21 @@ import {
   X,
   Zap
 } from "lucide-react";
-import type {
-  ImageLibraryItem,
-  ImagePromptWorkspaceModel,
-  ImageSceneAspectRatio,
-  ImageSceneOutputSubdir,
-  ImageScenePreset,
-  ImageWorkspaceGenerationStrategy,
-  PromptRecord,
-  SkillRecord
+import {
+  imageGenerationSize,
+  IMAGE_GENERATION_PROMPT_MAX_LENGTH,
+  IMAGE_GENERATION_RESOLUTIONS_BY_ASPECT_RATIO,
+  type ImageGenerationOutputFormat,
+  type ImageGenerationQuality,
+  type ImageGenerationResolution,
+  type ImageLibraryItem,
+  type ImagePromptWorkspaceModel,
+  type ImageSceneAspectRatio,
+  type ImageSceneOutputSubdir,
+  type ImageScenePreset,
+  type ImageWorkspaceGenerationStrategy,
+  type PromptRecord,
+  type SkillRecord
 } from "@roster/shared-types";
 import { configuredImageModelsFromApiKeys, configuredLabeledLlmModelsFromApiKeys, type ImageModelOption } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
@@ -63,6 +69,9 @@ import {
 } from "./image-studio/studio-data";
 
 const ASPECT_RATIOS: ImageSceneAspectRatio[] = ["1:1", "3:4", "9:16", "16:9"];
+const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10];
+const QUALITY_OPTIONS: ImageGenerationQuality[] = ["auto", "low", "medium", "high"];
+const OUTPUT_FORMAT_OPTIONS: ImageGenerationOutputFormat[] = ["png", "jpeg", "webp"];
 const OUTPUT_SUBDIRS: ImageSceneOutputSubdir[] = ["main", "detail", "live_cover"];
 const emptyPromptModel: ImagePromptWorkspaceModel = { provider: "mock", model: "" };
 
@@ -312,6 +321,13 @@ interface SeedStageProps {
   onSkuFolders: (value: SkuFolder[]) => void;
   perPromptCount: number;
   onPerPromptCount: (value: number) => void;
+  resolution: ImageGenerationResolution;
+  onResolution: (value: ImageGenerationResolution) => void;
+  quality: ImageGenerationQuality;
+  onQuality: (value: ImageGenerationQuality) => void;
+  outputFormat: ImageGenerationOutputFormat;
+  onOutputFormat: (value: ImageGenerationOutputFormat) => void;
+  aspectRatio: ImageSceneAspectRatio;
   providerGrid: JSX.Element;
   providerCount: number;
   sceneName: string;
@@ -485,6 +501,16 @@ function SeedStage(props: SeedStageProps): JSX.Element {
           />
         )}
 
+        <GenerationParamsPanel
+          resolution={props.resolution}
+          onResolution={props.onResolution}
+          quality={props.quality}
+          onQuality={props.onQuality}
+          outputFormat={props.outputFormat}
+          onOutputFormat={props.onOutputFormat}
+          aspectRatio={props.aspectRatio}
+        />
+
         {props.providerGrid}
 
         <div
@@ -606,7 +632,7 @@ function SkuFolderPicker({
       <div className="field" style={{ maxWidth: 280 }}>
         <div className="label">每个 SKU 生成张数</div>
         <div className="btn-group">
-          {[2, 4, 6, 8].map((value) => (
+          {[2, 4, 6, 8, 10].map((value) => (
             <button
               key={value}
               type="button"
@@ -617,6 +643,67 @@ function SkuFolderPicker({
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function GenerationParamsPanel({
+  resolution,
+  onResolution,
+  quality,
+  onQuality,
+  outputFormat,
+  onOutputFormat,
+  aspectRatio
+}: {
+  resolution: ImageGenerationResolution;
+  onResolution: (value: ImageGenerationResolution) => void;
+  quality: ImageGenerationQuality;
+  onQuality: (value: ImageGenerationQuality) => void;
+  outputFormat: ImageGenerationOutputFormat;
+  onOutputFormat: (value: ImageGenerationOutputFormat) => void;
+  aspectRatio: ImageSceneAspectRatio;
+}): JSX.Element {
+  const resolutionOptions = [...IMAGE_GENERATION_RESOLUTIONS_BY_ASPECT_RATIO[aspectRatio]];
+  const safeResolution = resolutionOptions.includes(resolution) ? resolution : resolutionOptions[0];
+  const pixelSize = imageGenerationSize(aspectRatio, safeResolution);
+  return (
+    <div className="generation-params">
+      <div className="field">
+        <div className="label">分辨率</div>
+        <select className="input" value={safeResolution} onChange={(event) => onResolution(event.target.value as ImageGenerationResolution)}>
+          {resolutionOptions.map((value) => (
+            <option key={value} value={value}>
+              {value.toUpperCase()} · {imageGenerationSize(aspectRatio, value)}
+            </option>
+          ))}
+        </select>
+        <div className="hint">接口 size: {pixelSize}</div>
+      </div>
+      <div className="field">
+        <div className="label">画质</div>
+        <select className="input" value={quality} onChange={(event) => onQuality(event.target.value as ImageGenerationQuality)}>
+          {QUALITY_OPTIONS.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <div className="label">输出格式</div>
+        <select
+          className="input"
+          value={outputFormat}
+          onChange={(event) => onOutputFormat(event.target.value as ImageGenerationOutputFormat)}
+        >
+          {OUTPUT_FORMAT_OPTIONS.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );
@@ -638,6 +725,13 @@ function PromptConfirmStage({
   onEdit,
   perPromptCount,
   onPerPromptCount,
+  resolution,
+  onResolution,
+  quality,
+  onQuality,
+  outputFormat,
+  onOutputFormat,
+  aspectRatio,
   providerCount,
   busy,
   onBack,
@@ -651,6 +745,13 @@ function PromptConfirmStage({
   onEdit: (id: string, text: string) => void;
   perPromptCount: number;
   onPerPromptCount: (value: number) => void;
+  resolution: ImageGenerationResolution;
+  onResolution: (value: ImageGenerationResolution) => void;
+  quality: ImageGenerationQuality;
+  onQuality: (value: ImageGenerationQuality) => void;
+  outputFormat: ImageGenerationOutputFormat;
+  onOutputFormat: (value: ImageGenerationOutputFormat) => void;
+  aspectRatio: ImageSceneAspectRatio;
   providerCount: number;
   busy: boolean;
   onBack: () => void;
@@ -682,7 +783,7 @@ function PromptConfirmStage({
           <div className="row" style={{ gap: 8 }}>
             <span className="small mute">每条出图</span>
             <div className="btn-group">
-              {[1, 2, 3, 4].map((value) => (
+              {IMAGE_COUNT_OPTIONS.map((value) => (
                 <button
                   key={value}
                   type="button"
@@ -707,6 +808,15 @@ function PromptConfirmStage({
           </div>
         </div>
       </div>
+      <GenerationParamsPanel
+        resolution={resolution}
+        onResolution={onResolution}
+        quality={quality}
+        onQuality={onQuality}
+        outputFormat={outputFormat}
+        onOutputFormat={onOutputFormat}
+        aspectRatio={aspectRatio}
+      />
 
       <div className="prompt-list">
         {drafts.map((draft, index) => {
@@ -721,6 +831,7 @@ function PromptConfirmStage({
                   className="textarea pr-textarea"
                   rows={3}
                   value={draft.text}
+                  maxLength={IMAGE_GENERATION_PROMPT_MAX_LENGTH}
                   autoFocus
                   onChange={(event) => onEdit(draft.id, event.target.value)}
                   onBlur={() => setEditingId(null)}
@@ -777,6 +888,12 @@ function QuickStage({
   onCount,
   ratio,
   onRatio,
+  resolution,
+  onResolution,
+  quality,
+  onQuality,
+  outputFormat,
+  onOutputFormat,
   providerGrid,
   providerCount,
   busy,
@@ -789,6 +906,12 @@ function QuickStage({
   onCount: (value: number) => void;
   ratio: ImageSceneAspectRatio;
   onRatio: (value: ImageSceneAspectRatio) => void;
+  resolution: ImageGenerationResolution;
+  onResolution: (value: ImageGenerationResolution) => void;
+  quality: ImageGenerationQuality;
+  onQuality: (value: ImageGenerationQuality) => void;
+  outputFormat: ImageGenerationOutputFormat;
+  onOutputFormat: (value: ImageGenerationOutputFormat) => void;
   providerGrid: JSX.Element;
   providerCount: number;
   busy: boolean;
@@ -807,22 +930,25 @@ function QuickStage({
             <div className="label">
               提示词<span className="req">*</span>
             </div>
-            <textarea
-              className="textarea serif"
-              rows={5}
-              value={text}
-              onChange={(event) => onText(event.target.value)}
-              placeholder="例如：俯拍角度，一支墨绿色保温杯与一束干花、几片橙红色枫叶……"
-            />
+              <textarea
+                className="textarea serif"
+                rows={5}
+                value={text}
+                maxLength={IMAGE_GENERATION_PROMPT_MAX_LENGTH}
+                onChange={(event) => onText(event.target.value)}
+                placeholder="例如：俯拍角度，一支墨绿色保温杯与一束干花、几片橙红色枫叶……"
+              />
             <div className="row" style={{ justifyContent: "flex-end", fontSize: 11, color: "var(--ink-3)" }}>
-              <span className="mono">{text.length} 字</span>
+              <span className="mono">
+                {text.length}/{IMAGE_GENERATION_PROMPT_MAX_LENGTH}
+              </span>
             </div>
           </div>
           <div className="grid-2" style={{ maxWidth: 460 }}>
             <div className="field">
               <div className="label">生成数量</div>
               <div className="btn-group" style={{ alignSelf: "flex-start" }}>
-                {[1, 2, 3, 4].map((value) => (
+                {IMAGE_COUNT_OPTIONS.map((value) => (
                   <button
                     key={value}
                     type="button"
@@ -849,6 +975,15 @@ function QuickStage({
               </select>
             </div>
           </div>
+          <GenerationParamsPanel
+            resolution={resolution}
+            onResolution={onResolution}
+            quality={quality}
+            onQuality={onQuality}
+            outputFormat={outputFormat}
+            onOutputFormat={onOutputFormat}
+            aspectRatio={ratio}
+          />
         </div>
         {providerGrid}
         <div
@@ -863,7 +998,7 @@ function QuickStage({
           <button
             type="button"
             className="btn primary lg"
-            disabled={!text.trim() || providerCount === 0 || busy}
+            disabled={!text.trim() || text.length > IMAGE_GENERATION_PROMPT_MAX_LENGTH || providerCount === 0 || busy}
             onClick={onGenerate}
           >
             <Zap size={14} />
@@ -986,6 +1121,13 @@ function I2IAssistStage({
   onAutoAssist,
   strength,
   onStrength,
+  resolution,
+  onResolution,
+  quality,
+  onQuality,
+  outputFormat,
+  onOutputFormat,
+  aspectRatio,
   providerGrid,
   providerCount,
   busy,
@@ -1000,6 +1142,13 @@ function I2IAssistStage({
   onAutoAssist: (value: boolean) => void;
   strength: number;
   onStrength: (value: number) => void;
+  resolution: ImageGenerationResolution;
+  onResolution: (value: ImageGenerationResolution) => void;
+  quality: ImageGenerationQuality;
+  onQuality: (value: ImageGenerationQuality) => void;
+  outputFormat: ImageGenerationOutputFormat;
+  onOutputFormat: (value: ImageGenerationOutputFormat) => void;
+  aspectRatio: ImageSceneAspectRatio;
   providerGrid: JSX.Element;
   providerCount: number;
   busy: boolean;
@@ -1038,9 +1187,15 @@ function I2IAssistStage({
                 className="textarea serif"
                 rows={4}
                 value={prompt}
+                maxLength={IMAGE_GENERATION_PROMPT_MAX_LENGTH}
                 onChange={(event) => onPrompt(event.target.value)}
                 placeholder="例如：保留参考图的暖色风格，主体换成樱花粉色款保温杯，背景改为窗边雪景"
               />
+              <div className="row" style={{ justifyContent: "flex-end", fontSize: 11, color: "var(--ink-3)" }}>
+                <span className="mono">
+                  {prompt.length}/{IMAGE_GENERATION_PROMPT_MAX_LENGTH}
+                </span>
+              </div>
             </div>
             <div className="field">
               <div className="label">
@@ -1060,6 +1215,15 @@ function I2IAssistStage({
               </div>
             </div>
           </div>
+          <GenerationParamsPanel
+            resolution={resolution}
+            onResolution={onResolution}
+            quality={quality}
+            onQuality={onQuality}
+            outputFormat={outputFormat}
+            onOutputFormat={onOutputFormat}
+            aspectRatio={aspectRatio}
+          />
           {providerGrid}
         </div>
       </div>
@@ -1087,6 +1251,13 @@ function TemplateStage({
   onTemplate,
   slots,
   onSlots,
+  resolution,
+  onResolution,
+  quality,
+  onQuality,
+  outputFormat,
+  onOutputFormat,
+  aspectRatio,
   providerGrid,
   providerCount,
   busy,
@@ -1097,6 +1268,13 @@ function TemplateStage({
   onTemplate: (value: string) => void;
   slots: boolean[];
   onSlots: (value: boolean[]) => void;
+  resolution: ImageGenerationResolution;
+  onResolution: (value: ImageGenerationResolution) => void;
+  quality: ImageGenerationQuality;
+  onQuality: (value: ImageGenerationQuality) => void;
+  outputFormat: ImageGenerationOutputFormat;
+  onOutputFormat: (value: ImageGenerationOutputFormat) => void;
+  aspectRatio: ImageSceneAspectRatio;
   providerGrid: JSX.Element;
   providerCount: number;
   busy: boolean;
@@ -1175,6 +1353,15 @@ function TemplateStage({
             })}
           </div>
         </div>
+        <GenerationParamsPanel
+          resolution={resolution}
+          onResolution={onResolution}
+          quality={quality}
+          onQuality={onQuality}
+          outputFormat={outputFormat}
+          onOutputFormat={onOutputFormat}
+          aspectRatio={aspectRatio}
+        />
         {providerGrid}
       </div>
       <div className="row" style={{ justifyContent: "flex-end" }}>
@@ -2063,7 +2250,7 @@ function SceneDrawer({
             value={perPrompt}
             onChange={(event) => setPerPrompt(Number(event.target.value))}
           >
-            {[1, 2, 3, 4, 6, 8].map((value) => (
+            {IMAGE_COUNT_OPTIONS.map((value) => (
               <option key={value} value={value}>
                 {value} 张
               </option>
@@ -2212,6 +2399,9 @@ export function ImageStudioPage(): JSX.Element {
 
   const [perPromptCount, setPerPromptCount] = useState(2);
   const [aspectRatio, setAspectRatio] = useState<ImageSceneAspectRatio>("3:4");
+  const [resolution, setResolution] = useState<ImageGenerationResolution>("1k");
+  const [quality, setQuality] = useState<ImageGenerationQuality>("auto");
+  const [outputFormat, setOutputFormat] = useState<ImageGenerationOutputFormat>("png");
   const [outputSubdir, setOutputSubdir] = useState<ImageSceneOutputSubdir>("main");
   const [imageModelOptions, setImageModelOptions] = useState<ImageModelOption[]>([]);
   const [selectedTargetKeys, setSelectedTargetKeys] = useState<Set<string>>(new Set());
@@ -2250,6 +2440,11 @@ export function ImageStudioPage(): JSX.Element {
   const [sceneDetailOpen, setSceneDetailOpen] = useState(false);
   const [compare, setCompare] = useState<{ original: ImageLibraryItem; variant: ImageLibraryItem } | null>(null);
   const [message, setMessage] = useState("");
+
+  const normalizeResolutionForRatio = (ratio: ImageSceneAspectRatio, current: ImageGenerationResolution): ImageGenerationResolution =>
+    IMAGE_GENERATION_RESOLUTIONS_BY_ASPECT_RATIO[ratio].includes(current)
+      ? current
+      : IMAGE_GENERATION_RESOLUTIONS_BY_ASPECT_RATIO[ratio][0];
 
   /* ---- derived ---- */
   const selectedPreset = useMemo(
@@ -2402,12 +2597,18 @@ export function ImageStudioPage(): JSX.Element {
       return;
     }
     setAspectRatio(selectedPreset.defaultAspectRatio);
+    setResolution((current) => normalizeResolutionForRatio(selectedPreset.defaultAspectRatio, current));
     setPerPromptCount(selectedPreset.defaultPerPromptCount);
     setOutputSubdir(selectedPreset.defaultOutputSubdir);
     if (selectedPreset.skillId) {
       setSkillId(selectedPreset.skillId);
     }
   }, [selectedPreset]);
+
+  const updateQuickRatio = (value: ImageSceneAspectRatio): void => {
+    setQuickRatio(value);
+    setResolution((current) => normalizeResolutionForRatio(value, current));
+  };
 
   /* ---- helpers ---- */
   const sceneCountFor = (preset: ImageScenePreset): number =>
@@ -2452,7 +2653,13 @@ export function ImageStudioPage(): JSX.Element {
   async function performGeneration(
     payload:
       | { kind: "prompts"; promptIds: string[]; ratio: ImageSceneAspectRatio }
-      | { kind: "adhoc"; mode: StudioMode; prompts: Array<{ text: string; label?: string }>; ratio: ImageSceneAspectRatio }
+      | {
+          kind: "adhoc";
+          mode: StudioMode;
+          prompts: Array<{ text: string; label?: string }>;
+          ratio: ImageSceneAspectRatio;
+          count?: number;
+        }
   ): Promise<boolean> {
     if (selectedOptions.length === 0) {
       setMessage("请先选择至少一个图片 Provider");
@@ -2473,6 +2680,9 @@ export function ImageStudioPage(): JSX.Element {
           targets,
           generationStrategy,
           aspectRatio: payload.ratio,
+          resolution: normalizeResolutionForRatio(payload.ratio, resolution),
+          quality,
+          outputFormat,
           perPromptCount,
           outputSubdir
         });
@@ -2481,7 +2691,8 @@ export function ImageStudioPage(): JSX.Element {
           setGenError(result.errors.join("；"));
         }
       } else {
-        setExpectedCount(payload.prompts.length * perPromptCount * multiplier);
+        const adHocCount = payload.count ?? perPromptCount;
+        setExpectedCount(payload.prompts.length * adHocCount * multiplier);
         const result = await window.roster.generateImagesAdHoc({
           mode: payload.mode,
           scene: sceneName,
@@ -2491,7 +2702,10 @@ export function ImageStudioPage(): JSX.Element {
           targets,
           generationStrategy,
           aspectRatio: payload.ratio,
-          perPromptCount,
+          resolution: normalizeResolutionForRatio(payload.ratio, resolution),
+          quality,
+          outputFormat,
+          perPromptCount: adHocCount,
           outputSubdir
         });
         setBatchPromptIds(result.promptIds);
@@ -2557,6 +2771,10 @@ export function ImageStudioPage(): JSX.Element {
       setMessage("请至少选择一条提示词");
       return false;
     }
+    if (items.some((item) => item.text.length > IMAGE_GENERATION_PROMPT_MAX_LENGTH)) {
+      setMessage(`提示词最多 ${IMAGE_GENERATION_PROMPT_MAX_LENGTH} 个字符，请先精简后再出图`);
+      return false;
+    }
     setBusy(true);
     setStage(2);
     try {
@@ -2611,18 +2829,27 @@ export function ImageStudioPage(): JSX.Element {
       setMessage("请先写一条提示词");
       return;
     }
+    if (quickText.length > IMAGE_GENERATION_PROMPT_MAX_LENGTH) {
+      setMessage(`提示词最多 ${IMAGE_GENERATION_PROMPT_MAX_LENGTH} 个字符`);
+      return;
+    }
     setStage(genStageIndex);
     await performGeneration({
       kind: "adhoc",
       mode: "quick",
       ratio: quickRatio,
+      count: quickCount,
       prompts: [{ text: quickText.trim(), label: "快速单图" }]
     });
   }
 
   async function handleI2IGenerate(): Promise<void> {
-    setStage(genStageIndex);
     const base = i2iPrompt.trim() || "基于参考图迁移风格与构图";
+    if (base.length > IMAGE_GENERATION_PROMPT_MAX_LENGTH) {
+      setMessage(`提示词最多 ${IMAGE_GENERATION_PROMPT_MAX_LENGTH} 个字符`);
+      return;
+    }
+    setStage(genStageIndex);
     await performGeneration({
       kind: "adhoc",
       mode: "i2i",
@@ -2664,6 +2891,9 @@ export function ImageStudioPage(): JSX.Element {
         targets,
         generationStrategy: "load_balance",
         aspectRatio,
+        resolution: normalizeResolutionForRatio(aspectRatio, resolution),
+        quality,
+        outputFormat,
         perPromptCount: 2,
         outputSubdir
       });
@@ -2878,6 +3108,13 @@ export function ImageStudioPage(): JSX.Element {
             onSkuFolders={setSkuFolders}
             perPromptCount={perPromptCount}
             onPerPromptCount={setPerPromptCount}
+            resolution={resolution}
+            onResolution={setResolution}
+            quality={quality}
+            onQuality={setQuality}
+            outputFormat={outputFormat}
+            onOutputFormat={setOutputFormat}
+            aspectRatio={aspectRatio}
             providerGrid={providerGrid}
             providerCount={selectedOptions.length}
             sceneName={sceneName}
@@ -2911,6 +3148,13 @@ export function ImageStudioPage(): JSX.Element {
             onEdit={(id, text) => setDrafts((current) => current.map((draft) => (draft.id === id ? { ...draft, text } : draft)))}
             perPromptCount={perPromptCount}
             onPerPromptCount={setPerPromptCount}
+            resolution={resolution}
+            onResolution={setResolution}
+            quality={quality}
+            onQuality={setQuality}
+            outputFormat={outputFormat}
+            onOutputFormat={setOutputFormat}
+            aspectRatio={aspectRatio}
             providerCount={selectedOptions.length}
             busy={busy}
             onBack={() => setStage(0)}
@@ -2956,6 +3200,13 @@ export function ImageStudioPage(): JSX.Element {
             onSkuFolders={setSkuFolders}
             perPromptCount={perPromptCount}
             onPerPromptCount={setPerPromptCount}
+            resolution={resolution}
+            onResolution={setResolution}
+            quality={quality}
+            onQuality={setQuality}
+            outputFormat={outputFormat}
+            onOutputFormat={setOutputFormat}
+            aspectRatio={aspectRatio}
             providerGrid={providerGrid}
             providerCount={selectedOptions.length}
             sceneName={sceneName}
@@ -2991,7 +3242,13 @@ export function ImageStudioPage(): JSX.Element {
             count={quickCount}
             onCount={setQuickCount}
             ratio={quickRatio}
-            onRatio={setQuickRatio}
+            onRatio={updateQuickRatio}
+            resolution={resolution}
+            onResolution={setResolution}
+            quality={quality}
+            onQuality={setQuality}
+            outputFormat={outputFormat}
+            onOutputFormat={setOutputFormat}
             providerGrid={providerGrid}
             providerCount={selectedOptions.length}
             busy={busy}
@@ -3038,6 +3295,13 @@ export function ImageStudioPage(): JSX.Element {
             onAutoAssist={setI2iAuto}
             strength={i2iStrength}
             onStrength={setI2iStrength}
+            resolution={resolution}
+            onResolution={setResolution}
+            quality={quality}
+            onQuality={setQuality}
+            outputFormat={outputFormat}
+            onOutputFormat={setOutputFormat}
+            aspectRatio={aspectRatio}
             providerGrid={providerGrid}
             providerCount={selectedOptions.length}
             busy={busy}
@@ -3072,6 +3336,13 @@ export function ImageStudioPage(): JSX.Element {
           onTemplate={setTemplateId}
           slots={templateSlots}
           onSlots={setTemplateSlots}
+          resolution={resolution}
+          onResolution={setResolution}
+          quality={quality}
+          onQuality={setQuality}
+          outputFormat={outputFormat}
+          onOutputFormat={setOutputFormat}
+          aspectRatio={aspectRatio}
           providerGrid={providerGrid}
           providerCount={selectedOptions.length}
           busy={busy}

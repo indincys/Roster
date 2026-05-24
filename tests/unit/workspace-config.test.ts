@@ -207,7 +207,8 @@ describe("ConfigDatabase workspace lifecycle", () => {
       providerRetryCount: 3,
       imageProviderConfigs: expect.arrayContaining([
         expect.objectContaining({ id: "mock", adapter: "mock", defaultModel: "mock-image", enabled: true }),
-        expect.objectContaining({ id: "openai", adapter: "openai-image", defaultModel: "gpt-image-1.5", enabled: false })
+        expect.objectContaining({ id: "openai", adapter: "openai-image", defaultModel: "gpt-image-1.5", enabled: false }),
+        expect.objectContaining({ id: "yunwu", adapter: "openai-image", baseUrl: "https://yunwu.ai/v1", enabled: false })
       ]),
       llmProviderConfigs: expect.arrayContaining([
         expect.objectContaining({ id: "deepseek", adapter: "openai-compatible", defaultModel: "deepseek-chat", enabled: false }),

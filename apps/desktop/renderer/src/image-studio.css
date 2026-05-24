@@ -605,6 +605,10 @@
   flex-direction: column;
   gap: 6px;
 }
+.image-studio .hint {
+  font-size: 11px;
+  color: var(--ink-3);
+}
 .image-studio .input,
 .image-studio .textarea,
 .image-studio .select-trigger,
@@ -1723,6 +1727,14 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+.image-studio .generation-params {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line-faint);
+  background: var(--panel-2);
 }
 .image-studio .info-box {
   display: flex;

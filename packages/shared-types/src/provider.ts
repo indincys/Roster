@@ -123,6 +123,16 @@ export const DEFAULT_IMAGE_PROVIDER_CONFIGS = [
     defaultModel: "gpt-image-1.5",
     enabled: false,
     isBuiltin: true
+  },
+  {
+    id: "yunwu",
+    label: "云雾 Image",
+    vendor: "云雾",
+    adapter: "openai-image",
+    baseUrl: "https://yunwu.ai/v1",
+    defaultModel: "gpt-image-1.5",
+    enabled: false,
+    isBuiltin: true
   }
 ] as const;
 

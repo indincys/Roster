@@ -126,6 +126,14 @@ const IMAGE_PROVIDER_PRESETS: SimpleProviderPreset[] = [
     defaultModel: "gpt-image-1.5"
   },
   {
+    id: "yunwu",
+    label: "云雾 Image",
+    vendor: "云雾",
+    adapter: "openai-image",
+    baseUrl: "https://yunwu.ai/v1",
+    defaultModel: "gpt-image-1.5"
+  },
+  {
     id: "mock",
     label: "Mock 图片本地测试",
     vendor: "Mock 图片本地测试",
@@ -168,6 +176,9 @@ function presetForVendor(vendor: string, kind: ApiKeyKind = "text"): SimpleProvi
   }
   if (normalized.includes("openai")) {
     return presets.find((preset) => preset.id === "openai") ?? null;
+  }
+  if (normalized === "yunwu" || normalized === "云雾" || normalized === "yunwu image" || normalized === "云雾 image") {
+    return presets.find((preset) => preset.id === "yunwu") ?? null;
   }
   if (normalized.includes("mock")) {
     return presets.find((preset) => preset.id === "mock") ?? null;
