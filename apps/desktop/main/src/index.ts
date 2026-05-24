@@ -1931,28 +1931,51 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.COVERS_GET_PREVIEW_FRAME, async (_event, payload: unknown): Promise<CoverPreviewFrameResult> => {
     const input = CoverPreviewFrameInputSchema.parse(payload);
     const cacheRootPath = path.join(app.getPath("userData"), "cache", "cover-timeline");
+    console.log("[cover-preview] handler input:", JSON.stringify(input));
     return withActiveWorkspaceDb(async (db) => {
       const video = db.listVideos().find((candidate) => candidate.id === input.videoId);
       if (!video) {
+        console.error("[cover-preview] video not found in db:", input.videoId);
         throw new Error("视频不存在");
       }
       const videoAbsolutePath = resolveActiveAbsolutePath(video.relativePath);
       const toolPaths = resolveFfmpegToolPaths();
+      console.log("[cover-preview] video:", {
+        id: video.id,
+        relativePath: video.relativePath,
+        absolutePath: videoAbsolutePath,
+        absoluteExists: existsSync(videoAbsolutePath),
+        width: video.width,
+        height: video.height,
+        durationSeconds: video.durationSeconds
+      });
+      console.log("[cover-preview] ffmpeg tools:", toolPaths);
       if (!toolPaths) {
         throw new Error("未找到 ffmpeg，无法生成预览帧");
       }
-      const result = await createPreviewFrameGenerator({ ...toolPaths, cacheRootPath })({
-        videoId: video.id,
-        videoAbsolutePath,
-        second: input.second
-      });
-      return {
-        videoId: video.id,
-        second: result.second,
-        cacheRelativePath: result.cacheRelativePath,
-        url: `${CACHE_PROTOCOL}://cover-timeline/${encodeURIComponent(result.cacheRelativePath)}`,
-        generated: true
-      };
+      try {
+        const result = await createPreviewFrameGenerator({ ...toolPaths, cacheRootPath })({
+          videoId: video.id,
+          videoAbsolutePath,
+          second: input.second
+        });
+        const outputAbsolutePath = path.join(cacheRootPath, result.cacheRelativePath);
+        console.log("[cover-preview] generated:", {
+          cacheRelativePath: result.cacheRelativePath,
+          outputAbsolutePath,
+          outputExists: existsSync(outputAbsolutePath)
+        });
+        return {
+          videoId: video.id,
+          second: result.second,
+          cacheRelativePath: result.cacheRelativePath,
+          url: `${CACHE_PROTOCOL}://cover-timeline/${encodeURIComponent(result.cacheRelativePath)}`,
+          generated: true
+        };
+      } catch (error) {
+        console.error("[cover-preview] ffmpeg failed:", error instanceof Error ? error.message : error);
+        throw error;
+      }
     });
   });
   ipcMain.handle(IPC_CHANNELS.COVERS_APPLY, async (_event, payload: unknown) => {
@@ -3033,6 +3056,10 @@ function registerLocalCacheProtocol(): void {
       return new Response(null, { status: 403 });
     }
 
+    if (!existsSync(absolutePath)) {
+      // eslint-disable-next-line no-console
+      console.warn("[cache-protocol] file missing for", request.url, "->", absolutePath);
+    }
     return net.fetch(pathToFileURL(absolutePath).toString());
   });
 }

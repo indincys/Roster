@@ -203,6 +203,8 @@ export function createPreviewFrameGenerator(options: PreviewFrameOptions): Previ
     const outputPath = path.join(options.cacheRootPath, cacheRelativePath);
     await mkdir(path.dirname(outputPath), { recursive: true });
     if (existsSync(outputPath)) {
+      // eslint-disable-next-line no-console
+      console.log("[ffmpeg-preview] cache hit:", outputPath);
       return { cacheRelativePath, second };
     }
     await new Promise<void>((resolve, reject) => {
@@ -210,9 +212,19 @@ export function createPreviewFrameGenerator(options: PreviewFrameOptions): Previ
         .seekInput(Math.max(0, second))
         .outputOptions(["-frames:v 1", "-q:v 3"])
         .output(outputPath)
-        .on("end", () => resolve())
+        .on("start", (cmdLine) => {
+          // eslint-disable-next-line no-console
+          console.log("[ffmpeg-preview] command:", cmdLine);
+        })
+        .on("end", () => {
+          // eslint-disable-next-line no-console
+          console.log("[ffmpeg-preview] done:", outputPath);
+          resolve();
+        })
         .on("error", (error, _stdout, stderr) => {
           const detail = typeof stderr === "string" && stderr.length > 0 ? `: ${stderr.trim().split("\n").slice(-3).join(" | ")}` : "";
+          // eslint-disable-next-line no-console
+          console.error("[ffmpeg-preview] failed:", error instanceof Error ? error.message : error, "stderr:", stderr);
           reject(new Error(`${error instanceof Error ? error.message : String(error)}${detail}`));
         })
         .run();
