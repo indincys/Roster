@@ -194,7 +194,6 @@ export function coverPreviewCacheRelativeDir(videoId: string): string {
 
 export function createPreviewFrameGenerator(options: PreviewFrameOptions): PreviewFrameGenerator {
   configureFfmpeg(options);
-  const maxWidth = options.maxWidth && options.maxWidth > 0 ? options.maxWidth : 1280;
   return async ({ videoId, videoAbsolutePath, second }) => {
     const ms = Math.max(0, Math.round(second * 1000));
     const cacheRelativePath = path.posix.join(
@@ -209,10 +208,13 @@ export function createPreviewFrameGenerator(options: PreviewFrameOptions): Previ
     await new Promise<void>((resolve, reject) => {
       ffmpeg(videoAbsolutePath)
         .seekInput(Math.max(0, second))
-        .outputOptions(["-frames:v 1", "-q:v 3", "-vf", `scale='min(${maxWidth},iw)':-2`])
+        .outputOptions(["-frames:v 1", "-q:v 3"])
         .output(outputPath)
         .on("end", () => resolve())
-        .on("error", (error) => reject(error))
+        .on("error", (error, _stdout, stderr) => {
+          const detail = typeof stderr === "string" && stderr.length > 0 ? `: ${stderr.trim().split("\n").slice(-3).join(" | ")}` : "";
+          reject(new Error(`${error instanceof Error ? error.message : String(error)}${detail}`));
+        })
         .run();
     });
     return { cacheRelativePath, second };
