@@ -78,7 +78,7 @@ export function CoverWorkspacePage(): JSX.Element {
   const [cropPosition, setCropPosition] = useState({ x: 0.5, y: 0.5 });
   const [draggingMask, setDraggingMask] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [videoNaturalSize, setVideoNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [imageNaturalSize, setImageNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [precisePreview, setPrecisePreview] = useState<{ url: string; second: number; videoId: string } | null>(
     null
   );
@@ -103,6 +103,13 @@ export function CoverWorkspacePage(): JSX.Element {
     () => parseAspect(ratio, customWidth, customHeight),
     [ratio, customWidth, customHeight]
   );
+
+  const videoNaturalSize = useMemo<{ width: number; height: number } | null>(() => {
+    if (selectedVideo?.width && selectedVideo?.height) {
+      return { width: selectedVideo.width, height: selectedVideo.height };
+    }
+    return imageNaturalSize;
+  }, [selectedVideo, imageNaturalSize]);
 
   const previewSize = useMemo(() => {
     const { width: ow, height: oh } = outerBox;
@@ -214,11 +221,7 @@ export function CoverWorkspacePage(): JSX.Element {
       setPreciseLoading(false);
       setPreciseError(null);
       setImageLoadError(null);
-      if (selectedVideo && selectedVideo.width && selectedVideo.height) {
-        setVideoNaturalSize({ width: selectedVideo.width, height: selectedVideo.height });
-      } else {
-        setVideoNaturalSize(null);
-      }
+      setImageNaturalSize(null);
       try {
         const result = await window.roster.getCoverTimeline({
           videoId: selectedVideoId,
@@ -342,7 +345,7 @@ export function CoverWorkspacePage(): JSX.Element {
       naturalHeight: img.naturalHeight
     });
     if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-      setVideoNaturalSize((current) => {
+      setImageNaturalSize((current) => {
         if (current && current.width === img.naturalWidth && current.height === img.naturalHeight) {
           return current;
         }
