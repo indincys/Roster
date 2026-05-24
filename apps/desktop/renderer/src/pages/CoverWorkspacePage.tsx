@@ -15,8 +15,8 @@ interface ToastState {
   key: number;
 }
 
-const MASK_SCALE = 0.6;
 const FRAME_COUNT = 30;
+const MASK_SCALE = 0.85;
 const PRECISE_FRAME_DEBOUNCE_MS = 280;
 
 function clamp(value: number, lo: number, hi: number): number {
@@ -86,11 +86,31 @@ export function CoverWorkspacePage(): JSX.Element {
   const [preciseError, setPreciseError] = useState<string | null>(null);
   const [imageLoadError, setImageLoadError] = useState<string | null>(null);
 
+  const [outerHeight, setOuterHeight] = useState(0);
   const draggingMaskRef = useRef(false);
+  const outerRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const lastFrameRef = useRef(-1);
   const toastTimerRef = useRef<number | null>(null);
   const preciseRequestRef = useRef<{ token: number; timer: number | null }>({ token: 0, timer: null });
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) {
+      return;
+    }
+    const apply = (): void => {
+      setOuterHeight(el.clientHeight);
+    };
+    apply();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", apply);
+      return () => window.removeEventListener("resize", apply);
+    }
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const selectedVideo = useMemo(
     () => videos.find((video) => video.id === selectedVideoId) ?? videos[0] ?? null,
@@ -118,14 +138,18 @@ export function CoverWorkspacePage(): JSX.Element {
     : 16 / 9;
 
   const maskRatios = useMemo(() => {
+    // Mask spans as close to the video's short edge as possible (defaults to
+    // MASK_SCALE of that edge) so the user can see exactly which slice of the
+    // frame will become the cover. A small margin is kept on both axes so the
+    // mask still has room to be dragged.
     let widthRatio: number;
     let heightRatio: number;
     if (contentAspect > targetAspect) {
       heightRatio = MASK_SCALE;
-      widthRatio = (MASK_SCALE * targetAspect) / contentAspect;
+      widthRatio = (heightRatio * targetAspect) / contentAspect;
     } else {
       widthRatio = MASK_SCALE;
-      heightRatio = (MASK_SCALE * contentAspect) / targetAspect;
+      heightRatio = (widthRatio * contentAspect) / targetAspect;
     }
     return { widthRatio, heightRatio };
   }, [contentAspect, targetAspect]);
@@ -502,8 +526,13 @@ export function CoverWorkspacePage(): JSX.Element {
     if (precisePreview && precisePreview.videoId === selectedVideoId) {
       return precisePreview.url;
     }
+    // Timeline mock placeholder SVGs (when ffmpeg fails) look ugly; rather show a
+    // loading state until the precise ffmpeg frame arrives.
+    if (timeline?.error) {
+      return null;
+    }
     return selectedFrame?.url ?? null;
-  }, [precisePreview, selectedVideoId, selectedFrame]);
+  }, [precisePreview, selectedVideoId, selectedFrame, timeline]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5" data-cover-workspace>
@@ -623,14 +652,17 @@ export function CoverWorkspacePage(): JSX.Element {
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
-            <div className="flex min-h-0 flex-1 items-center justify-center">
+            <div
+              ref={outerRef}
+              className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+            >
               <div
                 ref={previewRef}
                 style={{
                   aspectRatio: previewAspectStyle,
                   maxWidth: "100%",
-                  maxHeight: "calc(100vh - 360px)",
-                  height: "calc(100vh - 360px)"
+                  maxHeight: outerHeight > 50 ? `${outerHeight}px` : "calc(100vh - 360px)",
+                  height: outerHeight > 50 ? `${outerHeight}px` : "calc(100vh - 360px)"
                 }}
                 className="relative overflow-hidden rounded-lg border border-border bg-black"
                 data-cover-preview-frame={selectedFrame?.index ?? -1}
@@ -747,12 +779,17 @@ export function CoverWorkspacePage(): JSX.Element {
                       : "-"}
                 </span>
               </div>
-              <div className="flex gap-1.5 overflow-x-auto pb-1">
+              <div className="flex h-20 items-center gap-1.5 overflow-x-auto pb-1">
                 {timeline?.frames.map((frame) => (
                   <button
                     key={frame.cacheRelativePath}
+                    style={{
+                      aspectRatio: videoNaturalSize
+                        ? `${videoNaturalSize.width} / ${videoNaturalSize.height}`
+                        : "16 / 9"
+                    }}
                     className={cn(
-                      "h-14 w-24 shrink-0 overflow-hidden rounded border bg-muted",
+                      "h-full shrink-0 overflow-hidden rounded border bg-muted",
                       selectedFrame?.index === frame.index
                         ? "border-primary ring-2 ring-primary/30"
                         : "border-border hover:border-primary/50"
@@ -763,7 +800,7 @@ export function CoverWorkspacePage(): JSX.Element {
                     type="button"
                     data-cover-frame={frame.index}
                   >
-                    <img alt={`帧 ${frame.index + 1}`} className="h-full w-full object-cover" src={frame.url} />
+                    <img alt={`帧 ${frame.index + 1}`} className="block h-full w-full object-cover" src={frame.url} />
                   </button>
                 ))}
               </div>
