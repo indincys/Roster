@@ -106,4 +106,15 @@ describe("cover timeline utilities", () => {
     expect(filter).toContain(")*0");
     expect(filter).toContain(")*1");
   });
+
+  it("wraps the aspect ratio in parentheses so ffmpeg parses iw/(w/h) correctly", () => {
+    // Regression: without parens, `iw/3/4` is evaluated by ffmpeg as
+    // (iw/3)/4 = iw/12 instead of iw/(3/4) = iw*4/3, producing a thin
+    // horizontal sliver instead of a 3:4 portrait crop.
+    const filter = coverCropFilter({ aspectRatioWidth: 3, aspectRatioHeight: 4 });
+    expect(filter).toContain("iw/(3/4)");
+    expect(filter).toContain("ih*(3/4)");
+    expect(filter).toContain("gt(a,(3/4))");
+    expect(filter).not.toMatch(/[^(]iw\/3\/4/);
+  });
 });

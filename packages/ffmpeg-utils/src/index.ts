@@ -233,29 +233,55 @@ export function createPreviewFrameGenerator(options: PreviewFrameOptions): Previ
   };
 }
 
+const TIMELINE_CONCURRENCY = 6;
+
 export function createTimelineThumbnailGenerator(options: TimelineThumbnailOptions): TimelineThumbnailGenerator {
   configureFfmpeg(options);
   return async ({ videoId, videoAbsolutePath, durationSeconds, frameCount }) => {
     const metadataDuration =
-      durationSeconds && durationSeconds > 0 ? durationSeconds : (await createFfmpegVideoMetadataReader(options)(videoAbsolutePath)).durationSeconds;
+      durationSeconds && durationSeconds > 0
+        ? durationSeconds
+        : (await createFfmpegVideoMetadataReader(options)(videoAbsolutePath)).durationSeconds;
     const safeDuration = metadataDuration && metadataDuration > 0 ? metadataDuration : frameCount;
     const seconds = timelineFrameSeconds(safeDuration, frameCount);
     const outputRelativeDir = coverTimelineCacheRelativeDir(videoId);
     const outputDir = path.join(options.cacheRootPath, outputRelativeDir);
     await mkdir(outputDir, { recursive: true });
-    const frames: TimelineFrame[] = [];
-    for (let index = 0; index < seconds.length; index += 1) {
-      const cacheRelativePath = path.posix.join(outputRelativeDir, `frame-${String(index + 1).padStart(3, "0")}.jpg`);
+
+    const frames: TimelineFrame[] = seconds.map((second, index) => ({
+      index,
+      second,
+      cacheRelativePath: path.posix.join(outputRelativeDir, `frame-${String(index + 1).padStart(3, "0")}.jpg`)
+    }));
+
+    async function generateOne(index: number): Promise<void> {
+      const outputPath = path.join(options.cacheRootPath, frames[index].cacheRelativePath);
+      if (existsSync(outputPath)) {
+        return;
+      }
       await new Promise<void>((resolve, reject) => {
         ffmpeg(videoAbsolutePath)
+          // -skip_frame nokey lets the decoder fast-forward to the nearest
+          // keyframe so seek+single-frame extraction is much cheaper. The
+          // result is "approximately at second X" instead of exact, which
+          // is fine for navigation thumbnails (precise frames go through
+          // createPreviewFrameGenerator).
+          .inputOptions(["-skip_frame nokey"])
           .seekInput(seconds[index])
-          .outputOptions(["-frames:v 1", "-q:v 3"])
-          .output(path.join(options.cacheRootPath, cacheRelativePath))
+          .outputOptions(["-frames:v 1", "-q:v 5", "-vf", "scale=320:-2"])
+          .output(outputPath)
           .on("end", () => resolve())
           .on("error", (error) => reject(error))
           .run();
       });
-      frames.push({ index, second: seconds[index], cacheRelativePath });
+    }
+
+    for (let start = 0; start < seconds.length; start += TIMELINE_CONCURRENCY) {
+      const batch: Promise<void>[] = [];
+      for (let offset = 0; offset < TIMELINE_CONCURRENCY && start + offset < seconds.length; offset += 1) {
+        batch.push(generateOne(start + offset));
+      }
+      await Promise.all(batch);
     }
     return { durationSeconds: safeDuration, frames };
   };
@@ -281,7 +307,11 @@ export function coverCropFilter(input: {
     y: number;
   };
 }): string {
-  const ratioExpression = `${input.aspectRatioWidth}/${input.aspectRatioHeight}`;
+  // Wrap the ratio in parentheses, otherwise expressions like `iw/3/4`
+  // are parsed by ffmpeg's expression evaluator as `(iw/3)/4 = iw/12`
+  // rather than the intended `iw/(3/4) = iw*4/3`, producing a thin
+  // sliver of the original frame instead of a proper aspect crop.
+  const ratioExpression = `(${input.aspectRatioWidth}/${input.aspectRatioHeight})`;
   const cropX = clampCropPosition(input.cropPosition?.x);
   const cropY = clampCropPosition(input.cropPosition?.y);
   const cropWidth = `if(gt(a,${ratioExpression}),ih*${ratioExpression},iw)`;
