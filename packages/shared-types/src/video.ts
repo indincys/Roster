@@ -79,7 +79,8 @@ export const CoverApplyInputSchema = z.object({
     })
     .optional(),
   cropPosition: CoverCropPositionSchema.optional(),
-  frameIndex: z.number().int().nonnegative().optional()
+  frameIndex: z.number().int().nonnegative().optional(),
+  frameSecond: z.number().nonnegative().optional()
 });
 
 export const CoverApplyResultSchema = z.object({
@@ -125,6 +126,19 @@ export const CoverTimelineResultSchema = z.object({
   error: z.string().nullable()
 });
 
+export const CoverPreviewFrameInputSchema = z.object({
+  videoId: z.string().min(1),
+  second: z.number().nonnegative()
+});
+
+export const CoverPreviewFrameResultSchema = z.object({
+  videoId: z.string().min(1),
+  second: z.number().nonnegative(),
+  cacheRelativePath: RelativeWorkspacePathSchema,
+  url: z.string().min(1),
+  generated: z.boolean()
+});
+
 export type VideoStatus = z.infer<typeof VideoStatusSchema>;
 export type VideoRecord = z.infer<typeof VideoRecordSchema>;
 export type VideoLibraryItem = z.infer<typeof VideoLibraryItemSchema>;
@@ -141,3 +155,5 @@ export type CoverBatchApplyFirstFrameResult = z.infer<typeof CoverBatchApplyFirs
 export type CoverTimelineFrame = z.infer<typeof CoverTimelineFrameSchema>;
 export type CoverTimelineInput = z.infer<typeof CoverTimelineInputSchema>;
 export type CoverTimelineResult = z.infer<typeof CoverTimelineResultSchema>;
+export type CoverPreviewFrameInput = z.infer<typeof CoverPreviewFrameInputSchema>;
+export type CoverPreviewFrameResult = z.infer<typeof CoverPreviewFrameResultSchema>;

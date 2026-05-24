@@ -18,6 +18,7 @@ import {
   CacheCleanupInputSchema,
   CoverApplyInputSchema,
   CoverBatchApplyFirstFrameInputSchema,
+  CoverPreviewFrameInputSchema,
   CoverTimelineInputSchema,
   FeedbackPackageInputSchema,
   IPC_CHANNELS,
@@ -87,6 +88,7 @@ import {
   type ImageRecord,
   type ImageSoftDeleteResult,
   type CoverCropPosition,
+  type CoverPreviewFrameResult,
   type CoverTimelineResult,
   type ScriptWorkspaceColumnResult,
   type ScheduledJobRecord,
@@ -99,6 +101,7 @@ import {
   createFfmpegVideoMetadataReader,
   createCoverJpegGenerator,
   createFirstFrameThumbnailGenerator,
+  createPreviewFrameGenerator,
   copyOrFallbackCoverJpeg,
   createMockTimelineThumbnails,
   createTimelineThumbnailGenerator,
@@ -1925,6 +1928,33 @@ function registerIpcHandlers(): void {
       }
     });
   });
+  ipcMain.handle(IPC_CHANNELS.COVERS_GET_PREVIEW_FRAME, async (_event, payload: unknown): Promise<CoverPreviewFrameResult> => {
+    const input = CoverPreviewFrameInputSchema.parse(payload);
+    const cacheRootPath = path.join(app.getPath("userData"), "cache", "cover-timeline");
+    return withActiveWorkspaceDb(async (db) => {
+      const video = db.listVideos().find((candidate) => candidate.id === input.videoId);
+      if (!video) {
+        throw new Error("视频不存在");
+      }
+      const videoAbsolutePath = resolveActiveAbsolutePath(video.relativePath);
+      const toolPaths = resolveFfmpegToolPaths();
+      if (!toolPaths) {
+        throw new Error("未找到 ffmpeg，无法生成预览帧");
+      }
+      const result = await createPreviewFrameGenerator({ ...toolPaths, cacheRootPath })({
+        videoId: video.id,
+        videoAbsolutePath,
+        second: input.second
+      });
+      return {
+        videoId: video.id,
+        second: result.second,
+        cacheRelativePath: result.cacheRelativePath,
+        url: `${CACHE_PROTOCOL}://cover-timeline/${encodeURIComponent(result.cacheRelativePath)}`,
+        generated: true
+      };
+    });
+  });
   ipcMain.handle(IPC_CHANNELS.COVERS_APPLY, async (_event, payload: unknown) => {
     const input = CoverApplyInputSchema.parse(payload);
     const workspace = getActiveWorkspaceRecord();
@@ -1937,6 +1967,7 @@ function registerIpcHandlers(): void {
         video,
         frameIndex: input.frameIndex ?? 0
       });
+      const effectiveSecond = typeof input.frameSecond === "number" ? input.frameSecond : frame.second;
       const written = await writeCoverFile({
         workspaceRootPath: workspace.rootPath,
         videoLibraryRootPath: workspace.videoLibraryRootPath || null,
@@ -1944,7 +1975,7 @@ function registerIpcHandlers(): void {
         aspectRatio: input.aspectRatio,
         customRatio: input.customRatio,
         frameIndex: input.frameIndex ?? 0,
-        frameSecond: frame.second,
+        frameSecond: effectiveSecond,
         cropPosition: input.cropPosition,
         timelineFrameCachePath: frame.absolutePath
       });

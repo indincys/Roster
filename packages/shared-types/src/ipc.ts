@@ -104,6 +104,8 @@ import type {
   CoverApplyResult,
   CoverBatchApplyFirstFrameInput,
   CoverBatchApplyFirstFrameResult,
+  CoverPreviewFrameInput,
+  CoverPreviewFrameResult,
   CoverTimelineInput,
   CoverTimelineResult,
   VideoBatchUpdateInput,
@@ -135,6 +137,7 @@ export const IPC_CHANNELS = {
   VIDEOS_UPDATE: "videos:update",
   VIDEOS_BATCH_UPDATE: "videos:batchUpdate",
   COVERS_GET_TIMELINE: "covers:getTimeline",
+  COVERS_GET_PREVIEW_FRAME: "covers:getPreviewFrame",
   COVERS_APPLY: "covers:apply",
   COVERS_BATCH_APPLY_FIRST_FRAME: "covers:batchApplyFirstFrame",
   TAGS_LIST: "tags:list",
@@ -280,6 +283,10 @@ export interface IpcChannelMap {
   [IPC_CHANNELS.COVERS_GET_TIMELINE]: {
     request: CoverTimelineInput;
     response: CoverTimelineResult;
+  };
+  [IPC_CHANNELS.COVERS_GET_PREVIEW_FRAME]: {
+    request: CoverPreviewFrameInput;
+    response: CoverPreviewFrameResult;
   };
   [IPC_CHANNELS.COVERS_APPLY]: {
     request: CoverApplyInput;
@@ -611,6 +618,7 @@ export interface RosterApi {
   updateVideo(input: VideoUpdateInput): Promise<VideoLibraryItem>;
   batchUpdateVideos(input: VideoBatchUpdateInput): Promise<VideoLibraryItem[]>;
   getCoverTimeline(input: CoverTimelineInput): Promise<CoverTimelineResult>;
+  getCoverPreviewFrame(input: CoverPreviewFrameInput): Promise<CoverPreviewFrameResult>;
   applyCover(input: CoverApplyInput): Promise<CoverApplyResult>;
   batchApplyFirstFrameCovers(input: CoverBatchApplyFirstFrameInput): Promise<CoverBatchApplyFirstFrameResult>;
   listTags(): Promise<TagRecord[]>;

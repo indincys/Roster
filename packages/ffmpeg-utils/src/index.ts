@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ffmpeg from "fluent-ffmpeg";
@@ -172,6 +173,50 @@ export async function createMockTimelineThumbnails(input: {
     frames.push({ index, second: seconds[index], cacheRelativePath });
   }
   return { durationSeconds, frames };
+}
+
+export interface PreviewFrameInput {
+  videoId: string;
+  videoAbsolutePath: string;
+  second: number;
+}
+
+export interface PreviewFrameOptions extends FfmpegToolPaths {
+  cacheRootPath: string;
+  maxWidth?: number;
+}
+
+export type PreviewFrameGenerator = (input: PreviewFrameInput) => Promise<{ cacheRelativePath: string; second: number }>;
+
+export function coverPreviewCacheRelativeDir(videoId: string): string {
+  return `covers/${videoId}/preview`;
+}
+
+export function createPreviewFrameGenerator(options: PreviewFrameOptions): PreviewFrameGenerator {
+  configureFfmpeg(options);
+  const maxWidth = options.maxWidth && options.maxWidth > 0 ? options.maxWidth : 1280;
+  return async ({ videoId, videoAbsolutePath, second }) => {
+    const ms = Math.max(0, Math.round(second * 1000));
+    const cacheRelativePath = path.posix.join(
+      coverPreviewCacheRelativeDir(videoId),
+      `preview-${String(ms).padStart(8, "0")}.jpg`
+    );
+    const outputPath = path.join(options.cacheRootPath, cacheRelativePath);
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    if (existsSync(outputPath)) {
+      return { cacheRelativePath, second };
+    }
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(videoAbsolutePath)
+        .seekInput(Math.max(0, second))
+        .outputOptions(["-frames:v 1", "-q:v 3", "-vf", `scale='min(${maxWidth},iw)':-2`])
+        .output(outputPath)
+        .on("end", () => resolve())
+        .on("error", (error) => reject(error))
+        .run();
+    });
+    return { cacheRelativePath, second };
+  };
 }
 
 export function createTimelineThumbnailGenerator(options: TimelineThumbnailOptions): TimelineThumbnailGenerator {

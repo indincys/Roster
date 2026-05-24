@@ -6,6 +6,7 @@ import {
   type ApiKeySaveInput,
   type CoverApplyInput,
   type CoverBatchApplyFirstFrameInput,
+  type CoverPreviewFrameInput,
   type CoverTimelineInput,
   type FeedbackPackageInput,
   type ImageSaveInput,
@@ -76,6 +77,8 @@ const api: RosterApi = {
   updateVideo: (input: VideoUpdateInput) => ipcRenderer.invoke(IPC_CHANNELS.VIDEOS_UPDATE, input),
   batchUpdateVideos: (input: VideoBatchUpdateInput) => ipcRenderer.invoke(IPC_CHANNELS.VIDEOS_BATCH_UPDATE, input),
   getCoverTimeline: (input: CoverTimelineInput) => ipcRenderer.invoke(IPC_CHANNELS.COVERS_GET_TIMELINE, input),
+  getCoverPreviewFrame: (input: CoverPreviewFrameInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.COVERS_GET_PREVIEW_FRAME, input),
   applyCover: (input: CoverApplyInput) => ipcRenderer.invoke(IPC_CHANNELS.COVERS_APPLY, input),
   batchApplyFirstFrameCovers: (input: CoverBatchApplyFirstFrameInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.COVERS_BATCH_APPLY_FIRST_FRAME, input),
