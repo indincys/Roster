@@ -88,6 +88,7 @@ export function CoverWorkspacePage(): JSX.Element {
 
   const [outerHeight, setOuterHeight] = useState(0);
   const draggingMaskRef = useRef(false);
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const outerRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const lastFrameRef = useRef(-1);
@@ -358,21 +359,19 @@ export function CoverWorkspacePage(): JSX.Element {
     setImageLoadError(message);
   }
 
-  function updateCropPositionFromPointer(clientX: number, clientY: number): void {
+  function pointerToWrapperRatio(clientX: number, clientY: number): { x: number; y: number } | null {
     const preview = previewRef.current;
     if (!preview) {
-      return;
+      return null;
     }
     const rect = preview.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
-      return;
+      return null;
     }
-    const rawX = (clientX - rect.left) / rect.width;
-    const rawY = (clientY - rect.top) / rect.height;
-    setCropPosition({
-      x: clampCenter(rawX, halfX),
-      y: clampCenter(rawY, halfY)
-    });
+    return {
+      x: (clientX - rect.left) / rect.width,
+      y: (clientY - rect.top) / rect.height
+    };
   }
 
   function startMaskDrag(event: PointerEvent<HTMLDivElement>): void {
@@ -382,16 +381,34 @@ export function CoverWorkspacePage(): JSX.Element {
     } catch {
       // Programmatic Electron e2e events do not always create an active pointer capture target.
     }
+    const pointer = pointerToWrapperRatio(event.clientX, event.clientY);
+    if (!pointer) {
+      return;
+    }
+    // Record the offset between the pointer and the mask center at the moment
+    // of mousedown. While dragging we keep that offset constant — i.e. the
+    // point the user grabbed inside the mask stays under their cursor — so
+    // the mask never jumps when the user clicks near its edge.
+    dragOffsetRef.current = {
+      x: pointer.x - cropPosition.x,
+      y: pointer.y - cropPosition.y
+    };
     draggingMaskRef.current = true;
     setDraggingMask(true);
-    updateCropPositionFromPointer(event.clientX, event.clientY);
   }
 
   function moveMaskDrag(event: PointerEvent<HTMLDivElement>): void {
-    if (!draggingMaskRef.current) {
+    if (!draggingMaskRef.current || !dragOffsetRef.current) {
       return;
     }
-    updateCropPositionFromPointer(event.clientX, event.clientY);
+    const pointer = pointerToWrapperRatio(event.clientX, event.clientY);
+    if (!pointer) {
+      return;
+    }
+    setCropPosition({
+      x: clampCenter(pointer.x - dragOffsetRef.current.x, halfX),
+      y: clampCenter(pointer.y - dragOffsetRef.current.y, halfY)
+    });
   }
 
   function endMaskDrag(event: PointerEvent<HTMLDivElement>): void {
@@ -403,6 +420,7 @@ export function CoverWorkspacePage(): JSX.Element {
       // See the matching setPointerCapture guard above.
     }
     draggingMaskRef.current = false;
+    dragOffsetRef.current = null;
     setDraggingMask(false);
   }
 
@@ -701,9 +719,6 @@ export function CoverWorkspacePage(): JSX.Element {
                     {imageLoadError}
                   </div>
                 ) : null}
-                <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 font-mono text-[10px] text-white">
-                  aspect {previewAspectStyle} · video {videoNaturalSize ? `${videoNaturalSize.width}×${videoNaturalSize.height}` : "?"} · src {previewImageSrc ? "yes" : "null"}
-                </div>
                 {preciseLoading ? (
                   <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white">
                     <Loader2 className="size-3 animate-spin" />
