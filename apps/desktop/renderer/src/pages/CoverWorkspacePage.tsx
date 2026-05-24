@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, SyntheticEvent } from "react";
 import { CheckCircle2, Clapperboard, ImageIcon, Keyboard, Layers, Loader2, Save } from "lucide-react";
 import type { CoverTimelineFrame, CoverTimelineResult, VideoLibraryItem } from "@roster/shared-types";
@@ -86,9 +86,7 @@ export function CoverWorkspacePage(): JSX.Element {
   const [preciseError, setPreciseError] = useState<string | null>(null);
   const [imageLoadError, setImageLoadError] = useState<string | null>(null);
 
-  const [outerBox, setOuterBox] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const draggingMaskRef = useRef(false);
-  const outerRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const lastFrameRef = useRef(-1);
   const toastTimerRef = useRef<number | null>(null);
@@ -111,48 +109,29 @@ export function CoverWorkspacePage(): JSX.Element {
     return imageNaturalSize;
   }, [selectedVideo, imageNaturalSize]);
 
-  const previewSize = useMemo(() => {
-    const { width: ow, height: oh } = outerBox;
-    if (ow <= 0 || oh <= 0) {
-      return { width: 0, height: 0 };
-    }
-    if (!videoNaturalSize || videoNaturalSize.width <= 0 || videoNaturalSize.height <= 0) {
-      return { width: ow, height: oh };
-    }
-    const containerAspect = ow / oh;
-    const videoAspect = videoNaturalSize.width / videoNaturalSize.height;
-    if (containerAspect > videoAspect) {
-      return { width: oh * videoAspect, height: oh };
-    }
-    return { width: ow, height: ow / videoAspect };
-  }, [outerBox, videoNaturalSize]);
+  const previewAspectStyle = videoNaturalSize
+    ? `${videoNaturalSize.width} / ${videoNaturalSize.height}`
+    : "16 / 9";
 
-  const previewBox = previewSize;
+  const contentAspect = videoNaturalSize
+    ? videoNaturalSize.width / videoNaturalSize.height
+    : 16 / 9;
 
-  const contentRect = useMemo(
-    () => ({ left: 0, top: 0, width: previewBox.width, height: previewBox.height }),
-    [previewBox]
-  );
-
-  const maskSize = useMemo(() => {
-    if (contentRect.width === 0 || contentRect.height === 0) {
-      return { width: 0, height: 0 };
-    }
-    const contentAspect = contentRect.width / contentRect.height;
-    let cw: number;
-    let ch: number;
+  const maskRatios = useMemo(() => {
+    let widthRatio: number;
+    let heightRatio: number;
     if (contentAspect > targetAspect) {
-      ch = contentRect.height * MASK_SCALE;
-      cw = ch * targetAspect;
+      heightRatio = MASK_SCALE;
+      widthRatio = (MASK_SCALE * targetAspect) / contentAspect;
     } else {
-      cw = contentRect.width * MASK_SCALE;
-      ch = cw / targetAspect;
+      widthRatio = MASK_SCALE;
+      heightRatio = (MASK_SCALE * contentAspect) / targetAspect;
     }
-    return { width: cw, height: ch };
-  }, [contentRect, targetAspect]);
+    return { widthRatio, heightRatio };
+  }, [contentAspect, targetAspect]);
 
-  const halfX = contentRect.width > 0 ? maskSize.width / (2 * contentRect.width) : 0;
-  const halfY = contentRect.height > 0 ? maskSize.height / (2 * contentRect.height) : 0;
+  const halfX = maskRatios.widthRatio / 2;
+  const halfY = maskRatios.heightRatio / 2;
 
   const showToast = useCallback((kind: ToastKind, text: string) => {
     setToast({ kind, text, key: Date.now() });
@@ -185,24 +164,6 @@ export function CoverWorkspacePage(): JSX.Element {
 
   useEffect(() => {
     void loadVideos();
-  }, []);
-
-  useLayoutEffect(() => {
-    const el = outerRef.current;
-    if (!el) {
-      return;
-    }
-    const apply = (): void => {
-      setOuterBox({ width: el.clientWidth, height: el.clientHeight });
-    };
-    apply();
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", apply);
-      return () => window.removeEventListener("resize", apply);
-    }
-    const observer = new ResizeObserver(apply);
-    observer.observe(el);
-    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -364,12 +325,15 @@ export function CoverWorkspacePage(): JSX.Element {
 
   function updateCropPositionFromPointer(clientX: number, clientY: number): void {
     const preview = previewRef.current;
-    if (!preview || contentRect.width === 0 || contentRect.height === 0) {
+    if (!preview) {
       return;
     }
     const rect = preview.getBoundingClientRect();
-    const rawX = (clientX - rect.left - contentRect.left) / contentRect.width;
-    const rawY = (clientY - rect.top - contentRect.top) / contentRect.height;
+    if (rect.width === 0 || rect.height === 0) {
+      return;
+    }
+    const rawX = (clientX - rect.left) / rect.width;
+    const rawY = (clientY - rect.top) / rect.height;
     setCropPosition({
       x: clampCenter(rawX, halfX),
       y: clampCenter(rawY, halfY)
@@ -659,101 +623,91 @@ export function CoverWorkspacePage(): JSX.Element {
           </div>
 
           <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto_auto] gap-3 p-4">
-            <div
-              ref={outerRef}
-              className="relative grid min-h-0 place-items-center"
-              data-outer-w={outerBox.width}
-              data-outer-h={outerBox.height}
-              data-preview-w={previewSize.width.toFixed(1)}
-              data-preview-h={previewSize.height.toFixed(1)}
-              data-video-w={videoNaturalSize?.width ?? "null"}
-              data-video-h={videoNaturalSize?.height ?? "null"}
-            >
-              {previewSize.width > 0 ? (
-                <div
-                  ref={previewRef}
-                  style={{
-                    width: `${previewSize.width}px`,
-                    height: `${previewSize.height}px`
-                  }}
-                  className="relative overflow-hidden rounded-lg border border-border bg-black"
-                  data-cover-preview-frame={selectedFrame?.index ?? -1}
-                >
-                  {previewImageSrc ? (
-                    <img
-                      key={`${selectedVideoId ?? "no-video"}-${previewImageSrc}`}
-                      alt={`封面预览 ${selectedFrame ? selectedFrame.index + 1 : ""}`}
-                      className="block h-full w-full object-contain"
-                      src={previewImageSrc}
-                      onLoad={handlePreviewImageLoad}
-                      onError={handlePreviewImageError}
-                      data-cover-preview-image
-                    />
-                  ) : (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                      <ImageIcon className="size-12" />
-                      <div className="text-sm">{timelineLoading ? "正在生成时间轴" : "预览区"}</div>
-                    </div>
-                  )}
-                  {imageLoadError ? (
-                    <div className="absolute inset-x-2 bottom-2 break-words rounded-md bg-red-500/90 px-3 py-2 text-[11px] text-white">
-                      {imageLoadError}
-                    </div>
-                  ) : null}
-                  <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 font-mono text-[10px] text-white">
-                    outer {outerBox.width}×{outerBox.height} · preview {previewSize.width.toFixed(0)}×{previewSize.height.toFixed(0)} · video {videoNaturalSize ? `${videoNaturalSize.width}×${videoNaturalSize.height}` : "?"} · src {previewImageSrc ? "yes" : "null"}
+            <div className="grid min-h-0 place-items-center">
+              <div
+                ref={previewRef}
+                style={{
+                  aspectRatio: previewAspectStyle,
+                  maxHeight: "100%",
+                  maxWidth: "100%",
+                  height: "100%"
+                }}
+                className="relative overflow-hidden rounded-lg border border-border bg-black"
+                data-cover-preview-frame={selectedFrame?.index ?? -1}
+                data-video-w={videoNaturalSize?.width ?? "null"}
+                data-video-h={videoNaturalSize?.height ?? "null"}
+              >
+                {previewImageSrc ? (
+                  <img
+                    key={`${selectedVideoId ?? "no-video"}-${previewImageSrc}`}
+                    alt={`封面预览 ${selectedFrame ? selectedFrame.index + 1 : ""}`}
+                    className="absolute inset-0 block h-full w-full object-contain"
+                    src={previewImageSrc}
+                    onLoad={handlePreviewImageLoad}
+                    onError={handlePreviewImageError}
+                    data-cover-preview-image
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                    <ImageIcon className="size-12" />
+                    <div className="text-sm">{timelineLoading ? "正在生成时间轴" : "预览区"}</div>
                   </div>
-                  {preciseLoading ? (
-                    <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white">
-                      <Loader2 className="size-3 animate-spin" />
-                      取帧中
-                    </div>
-                  ) : preciseError ? (
-                    <div
-                      className="absolute right-2 top-2 max-w-[60%] truncate rounded-md bg-amber-500/90 px-2 py-1 text-[10px] text-white"
-                      title={preciseError}
-                    >
-                      取帧失败 · 显示最近缩略图
-                    </div>
-                  ) : null}
-                  {selectedVideo && maskSize.width > 0 ? (
-                    <div
-                      className={cn(
-                        "absolute cursor-move touch-none border-2 border-primary bg-primary/10 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)]",
-                        draggingMask ? "bg-primary/20" : ""
-                      )}
-                      style={{
-                        width: `${maskSize.width}px`,
-                        height: `${maskSize.height}px`,
-                        left: `${contentRect.left + cropPosition.x * contentRect.width - maskSize.width / 2}px`,
-                        top: `${contentRect.top + cropPosition.y * contentRect.height - maskSize.height / 2}px`
-                      }}
-                      role="slider"
-                      aria-label="封面裁剪位置"
-                      aria-valuetext={`${Math.round(cropPosition.x * 100)}%, ${Math.round(cropPosition.y * 100)}%`}
-                      onPointerDown={startMaskDrag}
-                      onPointerMove={moveMaskDrag}
-                      onPointerUp={endMaskDrag}
-                      onPointerCancel={endMaskDrag}
-                      data-cover-mask
-                      data-cover-crop-x={cropPosition.x.toFixed(3)}
-                      data-cover-crop-y={cropPosition.y.toFixed(3)}
-                    />
-                  ) : (
-                    <div
-                      style={{ display: "none" }}
-                      role="slider"
-                      data-cover-mask
-                      data-cover-crop-x={cropPosition.x.toFixed(3)}
-                      data-cover-crop-y={cropPosition.y.toFixed(3)}
-                    />
-                  )}
+                )}
+                {imageLoadError ? (
+                  <div className="absolute inset-x-2 bottom-2 break-words rounded-md bg-red-500/90 px-3 py-2 text-[11px] text-white">
+                    {imageLoadError}
+                  </div>
+                ) : null}
+                <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 font-mono text-[10px] text-white">
+                  aspect {previewAspectStyle} · video {videoNaturalSize ? `${videoNaturalSize.width}×${videoNaturalSize.height}` : "?"} · src {previewImageSrc ? "yes" : "null"}
                 </div>
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-                  正在准备预览…
-                </div>
-              )}
+                {preciseLoading ? (
+                  <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white">
+                    <Loader2 className="size-3 animate-spin" />
+                    取帧中
+                  </div>
+                ) : preciseError ? (
+                  <div
+                    className="absolute right-2 top-2 max-w-[60%] truncate rounded-md bg-amber-500/90 px-2 py-1 text-[10px] text-white"
+                    title={preciseError}
+                  >
+                    取帧失败 · 显示最近缩略图
+                  </div>
+                ) : null}
+                {selectedVideo ? (
+                  <div
+                    className={cn(
+                      "absolute cursor-move touch-none border-2 border-primary bg-primary/10 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)]",
+                      draggingMask ? "bg-primary/20" : ""
+                    )}
+                    style={{
+                      width: `${maskRatios.widthRatio * 100}%`,
+                      height: `${maskRatios.heightRatio * 100}%`,
+                      left: `${cropPosition.x * 100}%`,
+                      top: `${cropPosition.y * 100}%`,
+                      transform: "translate(-50%, -50%)"
+                    }}
+                    role="slider"
+                    aria-label="封面裁剪位置"
+                    aria-valuetext={`${Math.round(cropPosition.x * 100)}%, ${Math.round(cropPosition.y * 100)}%`}
+                    onPointerDown={startMaskDrag}
+                    onPointerMove={moveMaskDrag}
+                    onPointerUp={endMaskDrag}
+                    onPointerCancel={endMaskDrag}
+                    data-cover-mask
+                    data-cover-crop-x={cropPosition.x.toFixed(3)}
+                    data-cover-crop-y={cropPosition.y.toFixed(3)}
+                  />
+                ) : (
+                  <div
+                    style={{ display: "none" }}
+                    role="slider"
+                    data-cover-mask
+                    data-cover-crop-x={cropPosition.x.toFixed(3)}
+                    data-cover-crop-y={cropPosition.y.toFixed(3)}
+                  />
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2">
