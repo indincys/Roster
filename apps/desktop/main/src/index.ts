@@ -26,6 +26,10 @@ import {
   ImageScenePresetSaveInputSchema,
   ImageWorkspaceAdHocGenerateInputSchema,
   ImageWorkspaceGenerateInputSchema,
+  type ImageGenerationOutputFormat,
+  type ImageGenerationQuality,
+  type ImageGenerationResolution,
+  type ImageSceneAspectRatio,
   type ImageWorkspaceProviderTarget,
   ImageSaveInputSchema,
   ImageSoftDeleteInputSchema,
@@ -1165,7 +1169,7 @@ function createImageProviderFromConfig(config: ImageProviderConfig, apiKey?: str
     return new MockImageProvider(config.id);
   }
   if (config.adapter === "openai-image") {
-    return new OpenAIImageProvider({ id: config.id, baseUrl: config.baseUrl ?? undefined, apiKey });
+    return new OpenAIImageProvider({ id: config.id, baseUrl: config.baseUrl ?? undefined, apiKey, defaultModel: config.defaultModel });
   }
   return null;
 }
@@ -1548,13 +1552,16 @@ async function runImageWorkspaceGeneration(
     model: string;
     generationStrategy: "all_providers" | "load_balance";
     perPromptCount: number;
-    aspectRatio: "1:1" | "3:4" | "9:16" | "16:9";
+    aspectRatio: ImageSceneAspectRatio;
+    resolution: ImageGenerationResolution;
+    quality: ImageGenerationQuality;
+    outputFormat: ImageGenerationOutputFormat;
     outputSubdir: string;
   }
 ): Promise<{ requested: number; savedImages: ImageLibraryItem[]; failed: number; errors: string[] }> {
   const workspaceRootPath = getActiveWorkspaceRootPath();
-  const expectedDimensions = getImageDimensions(params.aspectRatio);
-  const { perPromptCount, aspectRatio, outputSubdir, generationStrategy } = params;
+  const expectedDimensions = getImageDimensions(params.aspectRatio, params.resolution);
+  const { perPromptCount, aspectRatio, resolution, quality, outputFormat, outputSubdir, generationStrategy } = params;
   const targets: ImageWorkspaceProviderTarget[] =
     params.targets.length > 0
       ? params.targets
@@ -1590,6 +1597,9 @@ async function runImageWorkspaceGeneration(
           prompt: prompt.text,
           count: perPromptCount,
           ratio: aspectRatio,
+          resolution,
+          quality,
+          outputFormat,
           apiKey: providerApiKey
         });
         db.saveApiCallLog({
@@ -1675,7 +1685,10 @@ async function runImageScheduledJob(job: ScheduledJobRecord, db: WorkspaceDataba
     model: "mock-image",
     prompt: prompt.text,
     count: 1,
-    ratio: "1:1"
+    ratio: "1:1",
+    resolution: "1k",
+    quality: "auto",
+    outputFormat: "png"
   });
   const image = generated.images[0];
   if (!image) {
@@ -2343,6 +2356,9 @@ function registerIpcHandlers(): void {
         generationStrategy: input.generationStrategy,
         perPromptCount: input.perPromptCount,
         aspectRatio: input.aspectRatio,
+        resolution: input.resolution,
+        quality: input.quality,
+        outputFormat: input.outputFormat,
         outputSubdir: input.outputSubdir
       });
       if (result.savedImages.length === 0 && result.errors.length > 0) {
@@ -2375,6 +2391,9 @@ function registerIpcHandlers(): void {
         generationStrategy: input.generationStrategy,
         perPromptCount: input.perPromptCount,
         aspectRatio: input.aspectRatio,
+        resolution: input.resolution,
+        quality: input.quality,
+        outputFormat: input.outputFormat,
         outputSubdir: input.outputSubdir
       });
       if (result.savedImages.length === 0 && result.errors.length > 0) {

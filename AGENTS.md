@@ -4,6 +4,14 @@
 
 ## Testing And Verification
 
+工具链版本：
+
+- 本项目开发、安装依赖、构建、测试和发版统一使用 Node 22 LTS。
+- 仓库根目录的 `.node-version`、`.nvmrc`、`.npmrc` 和 `package.json` `engines` 是项目级版本约束；工作树或分支只有合并这些文件后才会自动遵循。
+- 在 macOS 上执行验证前必须确认 `node -v` 为 `v22.x`，`npm -v` 满足 `>=10 <12`；不要删除系统或 Homebrew 的其他 Node 版本，只在当前终端或当前项目 PATH 中切换 Node 22。
+- 执行真实 Electron 桌面验收前必须先用 Node 22 正常运行 `npm ci`。禁止用 `npm ci --ignore-scripts` 作为 Electron 验收依赖安装方式，因为这会跳过 Electron 二进制和 native module 安装脚本，导致 e2e 结果无效。
+- 若当前环境是 Node 26 或其他非 Node 22 版本，先切换 Node 22 并重新安装依赖，再运行 `npm run test:e2e:electron`、`npm run test:performance:electron` 或发布验证。
+
 默认质量门：
 
 ```bash
@@ -99,4 +107,3 @@ npm run release:verify:strict
 - 不使用硬编码绝对路径保存业务数据。
 - 不在客户端内置私有 GitHub token。
 - 不删除或覆盖用户本地素材、任务单、状态文件、Skill 或备份，除非任务明确要求且用户确认。
-

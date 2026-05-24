@@ -1,3 +1,13 @@
+import {
+  imageGenerationDimensions,
+  imageGenerationSize,
+  IMAGE_GENERATION_RESOLUTIONS_BY_ASPECT_RATIO,
+  IMAGE_GENERATION_PROMPT_MAX_LENGTH,
+  type ImageGenerationOutputFormat,
+  type ImageGenerationQuality,
+  type ImageGenerationResolution
+} from "@roster/shared-types";
+
 export type ImageProviderId = string;
 export type ImageAspectRatio = "1:1" | "3:4" | "9:16" | "16:9";
 
@@ -7,6 +17,9 @@ export interface ImageGenerateRequest {
   prompt: string;
   count: number;
   ratio: ImageAspectRatio;
+  resolution: ImageGenerationResolution;
+  quality: ImageGenerationQuality;
+  outputFormat: ImageGenerationOutputFormat;
   apiKey?: string;
   signal?: AbortSignal;
 }
@@ -14,7 +27,7 @@ export interface ImageGenerateRequest {
 export interface GeneratedImageRef {
   id: string;
   bytes: Buffer;
-  extension: "svg" | "png" | "jpg" | "webp";
+  extension: "svg" | "jpg" | ImageGenerationOutputFormat;
   mimeType: string;
   prompt: string;
   width: number;
@@ -41,6 +54,7 @@ export interface OpenAIImageProviderOptions {
   fetch?: ProviderFetch;
   baseUrl?: string;
   apiKey?: string;
+  defaultModel?: string;
 }
 
 export class ImageProviderError extends Error {
@@ -53,17 +67,19 @@ export class ImageProviderError extends Error {
   }
 }
 
-export function imageDimensions(ratio: ImageAspectRatio): { width: number; height: number } {
-  if (ratio === "3:4") {
-    return { width: 900, height: 1200 };
+export function imageDimensions(
+  ratio: ImageAspectRatio,
+  resolution: ImageGenerationResolution = "1k"
+): { width: number; height: number } {
+  try {
+    return imageGenerationDimensions(ratio, resolution);
+  } catch {
+    throw new ImageProviderError(`${ratio} does not support ${resolution} resolution`, "invalid_request");
   }
-  if (ratio === "9:16") {
-    return { width: 900, height: 1600 };
-  }
-  if (ratio === "16:9") {
-    return { width: 1600, height: 900 };
-  }
-  return { width: 1200, height: 1200 };
+}
+
+export function imageSize(ratio: ImageAspectRatio, resolution: ImageGenerationResolution = "1k"): string {
+  return imageGenerationSize(ratio, resolution);
 }
 
 function escapeSvgText(value: string): string {
@@ -99,13 +115,8 @@ export class MockImageProvider implements ImageProvider {
   }
 
   async generate(request: ImageGenerateRequest): Promise<ImageGenerateResult> {
-    if (request.signal?.aborted) {
-      throw new ImageProviderError("Image request canceled", "canceled");
-    }
-    if (request.count < 1) {
-      throw new ImageProviderError("Image count must be positive", "invalid_request");
-    }
-    const dimensions = imageDimensions(request.ratio);
+    validateImageGenerateRequest(request);
+    const dimensions = imageDimensions(request.ratio, request.resolution);
 
     return {
       provider: this.id,
@@ -135,6 +146,10 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
 }
 
 function providerErrorMessage(body: unknown): string {
+  const htmlMessage = htmlResponseMessage(body);
+  if (htmlMessage) {
+    return htmlMessage;
+  }
   if (!body || typeof body !== "object") {
     return "Image provider request failed";
   }
@@ -148,14 +163,34 @@ function providerErrorMessage(body: unknown): string {
   return typeof record.message === "string" ? record.message : "Image provider request failed";
 }
 
-function openAIImageSize(ratio: ImageAspectRatio): string {
-  if (ratio === "9:16") {
-    return "1024x1536";
+function htmlResponseMessage(body: unknown): string | null {
+  if (!body || typeof body !== "object") {
+    return null;
   }
-  if (ratio === "16:9") {
-    return "1536x1024";
+  const message = (body as Record<string, unknown>).message;
+  if (typeof message !== "string") {
+    return null;
   }
-  return "1024x1024";
+  const trimmed = message.trim().toLowerCase();
+  if (!trimmed.startsWith("<!doctype html") && !trimmed.startsWith("<html")) {
+    return null;
+  }
+  return "图片 Provider 返回了网页 HTML，不是图片生成 API JSON。请检查 baseURL，云雾图片接口应填写 https://yunwu.ai/v1，不要填写 wlai.vip、网站首页或 Apifox 文档地址。";
+}
+
+function compactResponseBody(body: unknown): string {
+  const htmlMessage = htmlResponseMessage(body);
+  if (htmlMessage) {
+    return htmlMessage;
+  }
+  if (body === null || body === undefined) {
+    return "empty response";
+  }
+  try {
+    return JSON.stringify(body).slice(0, 500);
+  } catch {
+    return String(body).slice(0, 500);
+  }
 }
 
 function requireApiKey(request: ImageGenerateRequest, fallback?: string): string {
@@ -164,6 +199,24 @@ function requireApiKey(request: ImageGenerateRequest, fallback?: string): string
     throw new ImageProviderError("InvalidAPIKey", "provider_error");
   }
   return apiKey;
+}
+
+function validateImageGenerateRequest(request: ImageGenerateRequest): void {
+  if (request.signal?.aborted) {
+    throw new ImageProviderError("Image request canceled", "canceled");
+  }
+  if (request.count < 1 || request.count > 10) {
+    throw new ImageProviderError("Image count must be between 1 and 10", "invalid_request");
+  }
+  if (request.prompt.trim().length === 0) {
+    throw new ImageProviderError("Image prompt is required", "invalid_request");
+  }
+  if (request.prompt.length > IMAGE_GENERATION_PROMPT_MAX_LENGTH) {
+    throw new ImageProviderError(`Image prompt must be ${IMAGE_GENERATION_PROMPT_MAX_LENGTH} characters or less`, "invalid_request");
+  }
+  if (!IMAGE_GENERATION_RESOLUTIONS_BY_ASPECT_RATIO[request.ratio].includes(request.resolution)) {
+    throw new ImageProviderError(`${request.ratio} does not support ${request.resolution} resolution`, "invalid_request");
+  }
 }
 
 function extractImageModelIds(body: unknown): string[] {
@@ -176,7 +229,79 @@ function extractImageModelIds(body: unknown): string[] {
   }
   return data
     .map((item) => (item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string" ? (item as { id: string }).id : null))
-    .filter((id): id is string => typeof id === "string" && (/image/i.test(id) || /dall-e/i.test(id)));
+    .filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+}
+
+function mimeTypeForFormat(format: ImageGenerationOutputFormat): string {
+  return format === "jpeg" ? "image/jpeg" : `image/${format}`;
+}
+
+function formatFromMimeType(mimeType: string | null): ImageGenerationOutputFormat | null {
+  if (mimeType === "image/jpeg" || mimeType === "image/jpg") {
+    return "jpeg";
+  }
+  if (mimeType === "image/png") {
+    return "png";
+  }
+  if (mimeType === "image/webp") {
+    return "webp";
+  }
+  return null;
+}
+
+function decodeBase64Image(
+  value: string,
+  fallback: ImageGenerationOutputFormat
+): { bytes: Buffer; extension: ImageGenerationOutputFormat; mimeType: string } {
+  const dataUrlMatch = /^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/i.exec(value.trim());
+  const mimeType = dataUrlMatch?.[1]?.toLowerCase() ?? mimeTypeForFormat(fallback);
+  const encoded = dataUrlMatch?.[2] ?? value;
+  const extension = formatFromMimeType(mimeType) ?? fallback;
+  return {
+    bytes: Buffer.from(encoded, "base64"),
+    extension,
+    mimeType: mimeTypeForFormat(extension)
+  };
+}
+
+function firstImageUrl(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0) ?? null;
+  }
+  return null;
+}
+
+function imageExtensionFromUrl(url: string, fallback: ImageGenerationOutputFormat): "jpg" | ImageGenerationOutputFormat {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    const ext = pathname.split(".").pop();
+    if (ext === "jpg") {
+      return "jpg";
+    }
+    if (ext === "jpeg" || ext === "png" || ext === "webp") {
+      return ext;
+    }
+  } catch {
+    return fallback;
+  }
+  return fallback;
+}
+
+function imageMimeType(extension: "svg" | "jpg" | ImageGenerationOutputFormat): string {
+  if (extension === "svg") {
+    return "image/svg+xml";
+  }
+  if (extension === "jpg" || extension === "jpeg") {
+    return "image/jpeg";
+  }
+  return `image/${extension}`;
+}
+
+function responseArrayBuffer(response: Response): Promise<ArrayBuffer> {
+  return response.arrayBuffer();
 }
 
 export class OpenAIImageProvider implements ImageProvider {
@@ -184,12 +309,14 @@ export class OpenAIImageProvider implements ImageProvider {
   private readonly fetchImpl: ProviderFetch;
   private readonly baseUrl: string;
   private readonly apiKey?: string;
+  private readonly defaultModel?: string;
 
   constructor(options: OpenAIImageProviderOptions = {}) {
     this.id = options.id ?? "openai";
     this.fetchImpl = options.fetch ?? fetch;
-    this.baseUrl = options.baseUrl ?? "https://api.openai.com/v1";
+    this.baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
     this.apiKey = options.apiKey;
+    this.defaultModel = options.defaultModel;
   }
 
   async listModels(): Promise<string[]> {
@@ -198,24 +325,23 @@ export class OpenAIImageProvider implements ImageProvider {
     });
     const body = await parseJsonResponse(response);
     if (!response.ok) {
+      if ((response.status === 404 || response.status === 405) && this.defaultModel) {
+        return [this.defaultModel];
+      }
       throw new ImageProviderError(providerErrorMessage(body), response.status === 401 || response.status === 403 ? "provider_error" : "provider_error");
     }
     const ids = extractImageModelIds(body);
-    return ids.length > 0 ? ids : ["gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"];
+    return ids.length > 0 ? ids : this.defaultModel ? [this.defaultModel] : ["gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"];
   }
 
   listSupportedAspectRatios(model: string): ImageAspectRatio[] {
-    return model.startsWith("gpt-image") ? ["1:1", "9:16", "16:9"] : ["1:1"];
+    return model.startsWith("gpt-image") ? ["1:1", "3:4", "9:16", "16:9"] : ["1:1"];
   }
 
   async generate(request: ImageGenerateRequest): Promise<ImageGenerateResult> {
-    if (request.signal?.aborted) {
-      throw new ImageProviderError("Image request canceled", "canceled");
-    }
-    if (request.count < 1) {
-      throw new ImageProviderError("Image count must be positive", "invalid_request");
-    }
+    validateImageGenerateRequest(request);
     const apiKey = requireApiKey(request, this.apiKey);
+    const size = imageSize(request.ratio, request.resolution);
     const response = await this.fetchImpl(`${this.baseUrl}/images/generations`, {
       method: "POST",
       headers: {
@@ -226,7 +352,9 @@ export class OpenAIImageProvider implements ImageProvider {
         model: request.model,
         prompt: request.prompt,
         n: request.count,
-        size: openAIImageSize(request.ratio)
+        size,
+        quality: request.quality,
+        format: request.outputFormat
       }),
       signal: request.signal
     });
@@ -234,31 +362,75 @@ export class OpenAIImageProvider implements ImageProvider {
     if (!response.ok) {
       throw new ImageProviderError(providerErrorMessage(body), "provider_error");
     }
-    const dimensions = imageDimensions(request.ratio);
-    const data = body && typeof body === "object" ? (body as Record<string, unknown>).data : null;
-    const images: GeneratedImageRef[] = [];
-    if (Array.isArray(data)) {
-      data.forEach((item, index) => {
-        if (!item || typeof item !== "object" || typeof (item as Record<string, unknown>).b64_json !== "string") {
-          return;
-        }
-        images.push({
-          id: `openai-image-${Date.now()}-${index}`,
-          bytes: Buffer.from((item as { b64_json: string }).b64_json, "base64"),
-          extension: "png" as const,
-          mimeType: "image/png",
-          prompt: request.prompt,
-          ...dimensions
-        });
-      });
+    const htmlMessage = htmlResponseMessage(body);
+    if (htmlMessage) {
+      throw new ImageProviderError(htmlMessage, "provider_error");
     }
+    const dimensions = imageDimensions(request.ratio, request.resolution);
+    const images = await this.imagesFromResponse(body, request, dimensions);
     if (images.length === 0) {
-      throw new ImageProviderError("Image provider returned no image data", "provider_error");
+      throw new ImageProviderError(`Image provider returned no image data: ${compactResponseBody(body)}`, "provider_error");
     }
     return {
       provider: this.id,
       model: request.model,
       images
+    };
+  }
+
+  private async imagesFromResponse(
+    body: unknown,
+    request: ImageGenerateRequest,
+    dimensions: { width: number; height: number }
+  ): Promise<GeneratedImageRef[]> {
+    const data = body && typeof body === "object" ? (body as Record<string, unknown>).data : null;
+    const records = Array.isArray(data) ? data : data && typeof data === "object" ? [data] : [];
+    const images: GeneratedImageRef[] = [];
+    for (const [index, item] of records.entries()) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const record = item as Record<string, unknown>;
+      if (typeof record.b64_json === "string") {
+        const decoded = decodeBase64Image(record.b64_json, request.outputFormat);
+        images.push({
+          id: `openai-image-${Date.now()}-${index}`,
+          bytes: decoded.bytes,
+          extension: decoded.extension,
+          mimeType: decoded.mimeType,
+          prompt: request.prompt,
+          ...dimensions
+        });
+        continue;
+      }
+      const url = firstImageUrl(record.url);
+      if (url) {
+        images.push(await this.downloadImageUrl(url, request, index, dimensions));
+      }
+    }
+    return images;
+  }
+
+  private async downloadImageUrl(
+    url: string,
+    request: ImageGenerateRequest,
+    index: number,
+    dimensions: { width: number; height: number }
+  ): Promise<GeneratedImageRef> {
+    const response = await this.fetchImpl(url, { signal: request.signal });
+    if (!response.ok) {
+      const body = await parseJsonResponse(response);
+      throw new ImageProviderError(providerErrorMessage(body), "provider_error");
+    }
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    const extension = formatFromMimeType(contentType) ?? imageExtensionFromUrl(url, request.outputFormat);
+    return {
+      id: `openai-image-${Date.now()}-${index}`,
+      bytes: Buffer.from(await responseArrayBuffer(response)),
+      extension,
+      mimeType: imageMimeType(extension),
+      prompt: request.prompt,
+      ...dimensions
     };
   }
 }
