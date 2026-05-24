@@ -233,8 +233,6 @@ export function createPreviewFrameGenerator(options: PreviewFrameOptions): Previ
   };
 }
 
-const TIMELINE_CONCURRENCY = 6;
-
 export function createTimelineThumbnailGenerator(options: TimelineThumbnailOptions): TimelineThumbnailGenerator {
   configureFfmpeg(options);
   return async ({ videoId, videoAbsolutePath, durationSeconds, frameCount }) => {
@@ -254,36 +252,42 @@ export function createTimelineThumbnailGenerator(options: TimelineThumbnailOptio
       cacheRelativePath: path.posix.join(outputRelativeDir, `frame-${String(index + 1).padStart(3, "0")}.jpg`)
     }));
 
-    async function generateOne(index: number): Promise<void> {
-      const outputPath = path.join(options.cacheRootPath, frames[index].cacheRelativePath);
-      if (existsSync(outputPath)) {
-        return;
-      }
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg(videoAbsolutePath)
-          // -skip_frame nokey lets the decoder fast-forward to the nearest
-          // keyframe so seek+single-frame extraction is much cheaper. The
-          // result is "approximately at second X" instead of exact, which
-          // is fine for navigation thumbnails (precise frames go through
-          // createPreviewFrameGenerator).
-          .inputOptions(["-skip_frame nokey"])
-          .seekInput(seconds[index])
-          .outputOptions(["-frames:v 1", "-q:v 5", "-vf", "scale=320:-2"])
-          .output(outputPath)
-          .on("end", () => resolve())
-          .on("error", (error) => reject(error))
-          .run();
-      });
+    const allCached = frames.every((frame) =>
+      existsSync(path.join(options.cacheRootPath, frame.cacheRelativePath))
+    );
+    if (allCached) {
+      return { durationSeconds: safeDuration, frames };
     }
 
-    for (let start = 0; start < seconds.length; start += TIMELINE_CONCURRENCY) {
-      const batch: Promise<void>[] = [];
-      for (let offset = 0; offset < TIMELINE_CONCURRENCY && start + offset < seconds.length; offset += 1) {
-        batch.push(generateOne(start + offset));
-      }
-      await Promise.all(batch);
-    }
-    return { durationSeconds: safeDuration, frames };
+    // Single-pass extraction: one ffmpeg invocation walks the whole video once
+    // and emits all N thumbnails via the fps filter. This is dramatically
+    // faster than spawning N (or even N/concurrency) ffmpeg processes that
+    // each have to open, seek, decode, and exit.
+    const safeFps = Math.max(1 / Math.max(safeDuration, 0.001), frameCount / Math.max(safeDuration, 0.001));
+    const outputPattern = path.join(outputDir, "frame-%03d.jpg");
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(videoAbsolutePath)
+        .outputOptions([
+          "-vf",
+          `fps=${safeFps.toFixed(6)},scale=320:-2`,
+          "-frames:v",
+          String(frameCount),
+          "-q:v",
+          "5",
+          "-y"
+        ])
+        .output(outputPattern)
+        .on("end", () => resolve())
+        .on("error", (error) => reject(error))
+        .run();
+    });
+
+    // Keep only the frames that ffmpeg actually wrote (very short videos may
+    // emit fewer than frameCount frames). UI is tolerant of partial output.
+    const written = frames.filter((frame) =>
+      existsSync(path.join(options.cacheRootPath, frame.cacheRelativePath))
+    );
+    return { durationSeconds: safeDuration, frames: written.length > 0 ? written : frames };
   };
 }
 

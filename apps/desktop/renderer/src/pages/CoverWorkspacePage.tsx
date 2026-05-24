@@ -138,18 +138,29 @@ export function CoverWorkspacePage(): JSX.Element {
     : 16 / 9;
 
   const maskRatios = useMemo(() => {
-    // Mask spans as close to the video's short edge as possible (defaults to
-    // MASK_SCALE of that edge) so the user can see exactly which slice of the
-    // frame will become the cover. A small margin is kept on both axes so the
-    // mask still has room to be dragged.
+    // Cover frame defaults to the full width of the video (so users
+    // immediately see exactly which slice the cover will capture). For
+    // portrait videos with a portrait/square target this means the mask
+    // spans the entire width and can be dragged vertically. For landscape
+    // videos with a portrait target, full width would overflow the video
+    // height; in that case we fall back to MASK_SCALE so the user keeps
+    // some horizontal dragging margin.
     let widthRatio: number;
     let heightRatio: number;
     if (contentAspect > targetAspect) {
+      // Landscape video, target is narrower than the video: shrink mask
+      // height to MASK_SCALE so the user can drag horizontally.
       heightRatio = MASK_SCALE;
       widthRatio = (heightRatio * targetAspect) / contentAspect;
     } else {
-      widthRatio = MASK_SCALE;
+      // Portrait/square video, target is wider than (or equal to) the video:
+      // fill the full width.
+      widthRatio = 1;
       heightRatio = (widthRatio * contentAspect) / targetAspect;
+      if (heightRatio > 1) {
+        heightRatio = 1;
+        widthRatio = (heightRatio * targetAspect) / contentAspect;
+      }
     }
     return { widthRatio, heightRatio };
   }, [contentAspect, targetAspect]);
