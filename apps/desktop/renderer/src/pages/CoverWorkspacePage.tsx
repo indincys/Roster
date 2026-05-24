@@ -84,6 +84,7 @@ export function CoverWorkspacePage(): JSX.Element {
   );
   const [preciseLoading, setPreciseLoading] = useState(false);
   const [preciseError, setPreciseError] = useState<string | null>(null);
+  const [imageLoadError, setImageLoadError] = useState<string | null>(null);
 
   const [outerBox, setOuterBox] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const draggingMaskRef = useRef(false);
@@ -212,6 +213,7 @@ export function CoverWorkspacePage(): JSX.Element {
       setPrecisePreview(null);
       setPreciseLoading(false);
       setPreciseError(null);
+      setImageLoadError(null);
       if (selectedVideo && selectedVideo.width && selectedVideo.height) {
         setVideoNaturalSize({ width: selectedVideo.width, height: selectedVideo.height });
       } else {
@@ -331,13 +333,30 @@ export function CoverWorkspacePage(): JSX.Element {
   );
 
   function handlePreviewImageLoad(event: SyntheticEvent<HTMLImageElement>): void {
-    if (videoNaturalSize) {
-      return;
-    }
+    setImageLoadError(null);
     const img = event.currentTarget;
+    // eslint-disable-next-line no-console
+    console.log("[cover] preview image loaded:", {
+      src: img.src,
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight
+    });
     if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-      setVideoNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+      setVideoNaturalSize((current) => {
+        if (current && current.width === img.naturalWidth && current.height === img.naturalHeight) {
+          return current;
+        }
+        return { width: img.naturalWidth, height: img.naturalHeight };
+      });
     }
+  }
+
+  function handlePreviewImageError(event: SyntheticEvent<HTMLImageElement>): void {
+    const img = event.currentTarget;
+    const message = `图片加载失败: ${img.src}`;
+    // eslint-disable-next-line no-console
+    console.error("[cover] preview image load failed:", img.src);
+    setImageLoadError(message);
   }
 
   function updateCropPositionFromPointer(clientX: number, clientY: number): void {
@@ -637,7 +656,16 @@ export function CoverWorkspacePage(): JSX.Element {
           </div>
 
           <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto_auto] gap-3 p-4">
-            <div ref={outerRef} className="relative grid min-h-0 place-items-center">
+            <div
+              ref={outerRef}
+              className="relative grid min-h-0 place-items-center"
+              data-outer-w={outerBox.width}
+              data-outer-h={outerBox.height}
+              data-preview-w={previewSize.width.toFixed(1)}
+              data-preview-h={previewSize.height.toFixed(1)}
+              data-video-w={videoNaturalSize?.width ?? "null"}
+              data-video-h={videoNaturalSize?.height ?? "null"}
+            >
               {previewSize.width > 0 ? (
                 <div
                   ref={previewRef}
@@ -655,6 +683,7 @@ export function CoverWorkspacePage(): JSX.Element {
                       className="block h-full w-full object-contain"
                       src={previewImageSrc}
                       onLoad={handlePreviewImageLoad}
+                      onError={handlePreviewImageError}
                       data-cover-preview-image
                     />
                   ) : (
@@ -663,6 +692,14 @@ export function CoverWorkspacePage(): JSX.Element {
                       <div className="text-sm">{timelineLoading ? "正在生成时间轴" : "预览区"}</div>
                     </div>
                   )}
+                  {imageLoadError ? (
+                    <div className="absolute inset-x-2 bottom-2 break-words rounded-md bg-red-500/90 px-3 py-2 text-[11px] text-white">
+                      {imageLoadError}
+                    </div>
+                  ) : null}
+                  <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 font-mono text-[10px] text-white">
+                    outer {outerBox.width}×{outerBox.height} · preview {previewSize.width.toFixed(0)}×{previewSize.height.toFixed(0)} · video {videoNaturalSize ? `${videoNaturalSize.width}×${videoNaturalSize.height}` : "?"} · src {previewImageSrc ? "yes" : "null"}
+                  </div>
                   {preciseLoading ? (
                     <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white">
                       <Loader2 className="size-3 animate-spin" />
