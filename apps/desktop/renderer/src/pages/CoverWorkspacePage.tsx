@@ -622,15 +622,15 @@ export function CoverWorkspacePage(): JSX.Element {
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto_auto] gap-3 p-4">
-            <div className="grid min-h-0 place-items-center">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+            <div className="flex min-h-0 flex-1 items-center justify-center">
               <div
                 ref={previewRef}
                 style={{
                   aspectRatio: previewAspectStyle,
-                  maxHeight: "100%",
                   maxWidth: "100%",
-                  height: "100%"
+                  maxHeight: "calc(100vh - 360px)",
+                  height: "calc(100vh - 360px)"
                 }}
                 className="relative overflow-hidden rounded-lg border border-border bg-black"
                 data-cover-preview-frame={selectedFrame?.index ?? -1}
