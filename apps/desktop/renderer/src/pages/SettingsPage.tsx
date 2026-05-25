@@ -629,7 +629,7 @@ export function SettingsPage(): JSX.Element {
   };
 
   return (
-    <div className="flex flex-col gap-4 p-5">
+    <div className="flex min-h-full flex-col gap-4 p-5">
       <div>
         <h1 className="text-xl font-semibold">设置</h1>
         <p className="mt-1 text-sm text-muted-foreground">管理工作空间、路径映射、凭证和基础维护能力。</p>
@@ -638,7 +638,164 @@ export function SettingsPage(): JSX.Element {
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       {savedMessage ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{savedMessage}</div> : null}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
+      <div className="flex flex-col gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>API 设置</CardTitle>
+            <ShieldCheck className="size-4 text-emerald-600" />
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <form className="flex flex-col gap-3" onSubmit={(event) => void submitApiKey(event)} data-api-config-form>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-foreground">Key 类型</span>
+                <select
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
+                  value={apiKeyKind}
+                  onChange={(event) => setApiKeyKind(event.target.value as ApiKeyKind)}
+                  data-api-key-kind
+                >
+                  <option value="text">文本大模型</option>
+                  <option value="image">图片生成大模型</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-foreground">大模型厂商</span>
+                <input
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
+                  list="model-vendor-presets"
+                  value={modelVendor}
+                  onChange={(event) => selectPreset(event.target.value)}
+                  placeholder={apiKeyKind === "image" ? "OpenAI Image、自定义图片 Provider" : "OpenAI、DeepSeek、Kimi、豆包、Qwen、GLM、自定义厂商"}
+                  data-model-vendor
+                />
+                <datalist id="model-vendor-presets">
+                  {presetsForKind(apiKeyKind).map((preset) => (
+                    <option key={`${apiKeyKind}-${preset.id}`} value={preset.vendor} />
+                  ))}
+                </datalist>
+              </label>
+              <Input
+                label="模型 ID"
+                value={modelId}
+                onChange={(event) => {
+                  setModelId(event.target.value);
+                  setApiConnectionTestResult(null);
+                }}
+                placeholder={apiKeyKind === "image" ? "gpt-image-1.5" : "gpt-5.4-mini"}
+                data-model-id
+              />
+              <Input
+                label="Key 名称"
+                value={apiKeyLabel}
+                onChange={(event) => setApiKeyLabel(event.target.value)}
+                placeholder="例如：DeepSeek 主账号 / 备用额度"
+                data-api-key-label
+              />
+              <Input
+                label="baseURL"
+                value={baseUrl}
+                onChange={(event) => {
+                  setBaseUrl(event.target.value);
+                  setApiConnectionTestResult(null);
+                }}
+                placeholder="https://api.example.com/v1"
+                data-provider-config-base-url
+              />
+              <Input
+                label="API key"
+                type="password"
+                value={apiKey}
+                onChange={(event) => {
+                  setApiKey(event.target.value);
+                  setApiConnectionTestResult(null);
+                }}
+                data-api-key-value
+                placeholder={editingApiKeyId ? "留空则保留已保存 key" : ""}
+                hint="保存前会先做连通性测试；测试通过后才使用本机密钥 AES-GCM 加密写入。"
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={apiKeyDefault}
+                  onChange={(event) => setApiKeyDefault(event.target.checked)}
+                  data-api-key-default
+                />
+                设为该 Provider 默认 Key
+              </label>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={
+                  !modelVendor.trim() ||
+                  !modelId.trim() ||
+                  (!editingApiKeyId && !apiKey.trim()) ||
+                  ((apiKeyKind === "image" ? imageAdapterForVendor(modelVendor) !== "mock" : textAdapterForVendor(modelVendor) !== "mock") &&
+                    !baseUrl.trim())
+                }
+                data-save-api-key
+                data-test-api-key
+              >
+                <KeyRound />
+                {editingApiKeyId ? "测试并保存修改" : "保存并测试 API"}
+              </Button>
+              {editingApiKeyId ? (
+                <Button variant="outline" onClick={resetApiKeyForm}>
+                  取消编辑
+                </Button>
+              ) : null}
+              {apiConnectionTestResult ? (
+                <div className="rounded-md border border-border bg-background p-2 text-xs" data-api-key-test-result={apiConnectionTestResult.apiKeyId}>
+                  <div className={apiConnectionTestResult.ok ? "text-emerald-700" : "text-red-700"}>
+                    {apiConnectionTestResult.ok
+                      ? `连接成功，模型 ${apiConnectionTestResult.modelCount} 个`
+                      : `连接失败：${apiConnectionTestResult.errorCode ?? "ProviderError"}`}
+                  </div>
+                  {apiConnectionTestResult.models.length ? (
+                    <div className="mt-1 truncate font-mono text-muted-foreground">{apiConnectionTestResult.models.slice(0, 5).join(" / ")}</div>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="flex flex-col gap-2 rounded-md border border-border bg-background p-3" data-api-key-list>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-foreground">已保存 API key</span>
+                  <Badge variant="neutral">
+                    文本 {apiKeys.filter((record) => record.kind === "text").length} / 图片 {apiKeys.filter((record) => record.kind === "image").length}
+                  </Badge>
+                </div>
+                {apiKeys.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+                    暂无凭证；保存后模型才会出现在生成工作区。
+                  </div>
+                ) : (
+                  <div className="flex max-h-48 flex-col gap-2 overflow-auto">
+                    {apiKeys.map((record) => (
+                      <div
+                        key={record.id}
+                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border px-3 py-2 text-xs"
+                        data-api-key-row={record.id}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">{record.label}</div>
+                          <div className="truncate font-mono text-muted-foreground">
+                            {record.provider}{record.model ? ` / ${record.model}` : ""}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Badge variant={record.kind === "image" ? "info" : "neutral"}>{record.kind === "image" ? "图片" : "文本"}</Badge>
+                          <Badge variant={record.isDefault ? "success" : "neutral"}>{record.isDefault ? "默认" : "备用"}</Badge>
+                          <Button variant="ghost" size="icon" aria-label="编辑 API key" onClick={() => editApiKey(record)} data-edit-api-key={record.id}>
+                            <Pencil />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>工作空间</CardTitle>
@@ -886,163 +1043,6 @@ export function SettingsPage(): JSX.Element {
         </Card>
 
         <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>凭证</CardTitle>
-              <ShieldCheck className="size-4 text-emerald-600" />
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <form className="flex flex-col gap-3" onSubmit={(event) => void submitApiKey(event)} data-api-config-form>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-foreground">Key 类型</span>
-                  <select
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none"
-                    value={apiKeyKind}
-                    onChange={(event) => setApiKeyKind(event.target.value as ApiKeyKind)}
-                    data-api-key-kind
-                  >
-                    <option value="text">文本大模型</option>
-                    <option value="image">图片生成大模型</option>
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-foreground">大模型厂商</span>
-                  <input
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
-                    list="model-vendor-presets"
-                    value={modelVendor}
-                    onChange={(event) => selectPreset(event.target.value)}
-                    placeholder={apiKeyKind === "image" ? "OpenAI Image、自定义图片 Provider" : "OpenAI、DeepSeek、Kimi、豆包、Qwen、GLM、自定义厂商"}
-                    data-model-vendor
-                  />
-                  <datalist id="model-vendor-presets">
-                    {presetsForKind(apiKeyKind).map((preset) => (
-                      <option key={`${apiKeyKind}-${preset.id}`} value={preset.vendor} />
-                    ))}
-                  </datalist>
-                </label>
-                <Input
-                  label="模型 ID"
-                  value={modelId}
-                  onChange={(event) => {
-                    setModelId(event.target.value);
-                    setApiConnectionTestResult(null);
-                  }}
-                  placeholder={apiKeyKind === "image" ? "gpt-image-1.5" : "gpt-5.4-mini"}
-                  data-model-id
-                />
-                <Input
-                  label="Key 名称"
-                  value={apiKeyLabel}
-                  onChange={(event) => setApiKeyLabel(event.target.value)}
-                  placeholder="例如：DeepSeek 主账号 / 备用额度"
-                  data-api-key-label
-                />
-                <Input
-                  label="baseURL"
-                  value={baseUrl}
-                  onChange={(event) => {
-                    setBaseUrl(event.target.value);
-                    setApiConnectionTestResult(null);
-                  }}
-                  placeholder="https://api.example.com/v1"
-                  data-provider-config-base-url
-                />
-                <Input
-                  label="API key"
-                  type="password"
-                  value={apiKey}
-                  onChange={(event) => {
-                    setApiKey(event.target.value);
-                    setApiConnectionTestResult(null);
-                  }}
-                  data-api-key-value
-                  placeholder={editingApiKeyId ? "留空则保留已保存 key" : ""}
-                  hint="保存前会先做连通性测试；测试通过后才使用本机密钥 AES-GCM 加密写入。"
-                />
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={apiKeyDefault}
-                    onChange={(event) => setApiKeyDefault(event.target.checked)}
-                    data-api-key-default
-                  />
-                  设为该 Provider 默认 Key
-                </label>
-                <Button
-                  variant="primary"
-                  type="submit"
-                  disabled={
-                    !modelVendor.trim() ||
-                    !modelId.trim() ||
-                    (!editingApiKeyId && !apiKey.trim()) ||
-                    ((apiKeyKind === "image" ? imageAdapterForVendor(modelVendor) !== "mock" : textAdapterForVendor(modelVendor) !== "mock") &&
-                      !baseUrl.trim())
-                  }
-                  data-save-api-key
-                  data-test-api-key
-                >
-                  <KeyRound />
-                  {editingApiKeyId ? "测试并保存修改" : "保存并测试 API"}
-                </Button>
-                {editingApiKeyId ? (
-                  <Button variant="outline" onClick={resetApiKeyForm}>
-                    取消编辑
-                  </Button>
-                ) : null}
-                {apiConnectionTestResult ? (
-                  <div className="rounded-md border border-border bg-background p-2 text-xs" data-api-key-test-result={apiConnectionTestResult.apiKeyId}>
-                    <div className={apiConnectionTestResult.ok ? "text-emerald-700" : "text-red-700"}>
-                      {apiConnectionTestResult.ok
-                        ? `连接成功，模型 ${apiConnectionTestResult.modelCount} 个`
-                        : `连接失败：${apiConnectionTestResult.errorCode ?? "ProviderError"}`}
-                    </div>
-                    {apiConnectionTestResult.models.length ? (
-                      <div className="mt-1 truncate font-mono text-muted-foreground">{apiConnectionTestResult.models.slice(0, 5).join(" / ")}</div>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="flex flex-col gap-2 rounded-md border border-border bg-background p-3" data-api-key-list>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-foreground">已保存 API key</span>
-                    <Badge variant="neutral">
-                      文本 {apiKeys.filter((record) => record.kind === "text").length} / 图片 {apiKeys.filter((record) => record.kind === "image").length}
-                    </Badge>
-                  </div>
-                  {apiKeys.length === 0 ? (
-                    <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
-                      暂无凭证；保存后模型才会出现在生成工作区。
-                    </div>
-                  ) : (
-                    <div className="flex max-h-48 flex-col gap-2 overflow-auto">
-                      {apiKeys.map((record) => (
-                        <div
-                          key={record.id}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border px-3 py-2 text-xs"
-                          data-api-key-row={record.id}
-                        >
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium">{record.label}</div>
-                            <div className="truncate font-mono text-muted-foreground">
-                              {record.provider}{record.model ? ` / ${record.model}` : ""}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Badge variant={record.kind === "image" ? "info" : "neutral"}>{record.kind === "image" ? "图片" : "文本"}</Badge>
-                            <Badge variant={record.isDefault ? "success" : "neutral"}>{record.isDefault ? "默认" : "备用"}</Badge>
-                            <Button variant="ghost" size="icon" aria-label="编辑 API key" onClick={() => editApiKey(record)} data-edit-api-key={record.id}>
-                              <Pencil />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>备份</CardTitle>
