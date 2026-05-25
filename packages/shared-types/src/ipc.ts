@@ -5,14 +5,19 @@ import type {
   ApiKeySaveInput,
   ApiKeyStorageAudit
 } from "./security";
-import type { ImageLibraryItem, ImageSaveInput, ImageSoftDeleteInput, ImageSoftDeleteResult } from "./image";
+import type { ImageLibraryItem, ImageReviewInput, ImageSaveInput, ImageSoftDeleteInput, ImageSoftDeleteResult } from "./image";
 import type {
+  ImageReferenceFileChooseResult,
+  ImageReferenceFolderChooseResult,
+  ImageReferenceFolderInspectInput,
+  ImageReferenceFolderInspectResult,
   ImagePromptWorkspaceGenerateInput,
   ImagePromptWorkspaceGenerateResult,
   ImageScenePreset,
   ImageScenePresetSaveInput,
   ImageWorkspaceAdHocGenerateInput,
   ImageWorkspaceAdHocGenerateResult,
+  ImageWorkspaceEditGenerateInput,
   ImageWorkspaceGenerateInput,
   ImageWorkspaceGenerateResult
 } from "./image-workspace";
@@ -155,11 +160,16 @@ export const IPC_CHANNELS = {
   IMAGES_LIST: "images:list",
   IMAGES_SAVE: "images:save",
   IMAGES_SOFT_DELETE: "images:softDelete",
+  IMAGES_REVIEW: "images:review",
   IMAGE_PROMPT_WORKSPACE_GENERATE: "imagePromptWorkspace:generate",
   IMAGE_SCENE_PRESETS_LIST: "imageScenePresets:list",
   IMAGE_SCENE_PRESETS_SAVE: "imageScenePresets:save",
   IMAGE_WORKSPACE_GENERATE: "imageWorkspace:generate",
   IMAGE_WORKSPACE_GENERATE_ADHOC: "imageWorkspace:generateAdHoc",
+  IMAGE_WORKSPACE_GENERATE_EDITS: "imageWorkspace:generateEdits",
+  IMAGE_REFERENCE_FILES_CHOOSE: "imageReferences:chooseFiles",
+  IMAGE_REFERENCE_FOLDER_CHOOSE: "imageReferences:chooseFolder",
+  IMAGE_REFERENCE_FOLDER_INSPECT: "imageReferences:inspectFolder",
   SCRIPTS_LIST: "scripts:list",
   SCRIPTS_SAVE: "scripts:save",
   SCRIPTS_EXPORT: "scripts:export",
@@ -356,6 +366,10 @@ export interface IpcChannelMap {
     request: ImageSoftDeleteInput;
     response: ImageSoftDeleteResult;
   };
+  [IPC_CHANNELS.IMAGES_REVIEW]: {
+    request: ImageReviewInput;
+    response: ImageLibraryItem;
+  };
   [IPC_CHANNELS.IMAGE_PROMPT_WORKSPACE_GENERATE]: {
     request: ImagePromptWorkspaceGenerateInput;
     response: ImagePromptWorkspaceGenerateResult;
@@ -375,6 +389,22 @@ export interface IpcChannelMap {
   [IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_ADHOC]: {
     request: ImageWorkspaceAdHocGenerateInput;
     response: ImageWorkspaceAdHocGenerateResult;
+  };
+  [IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_EDITS]: {
+    request: ImageWorkspaceEditGenerateInput;
+    response: ImageWorkspaceGenerateResult & { promptIds: string[] };
+  };
+  [IPC_CHANNELS.IMAGE_REFERENCE_FILES_CHOOSE]: {
+    request: undefined;
+    response: ImageReferenceFileChooseResult;
+  };
+  [IPC_CHANNELS.IMAGE_REFERENCE_FOLDER_CHOOSE]: {
+    request: undefined;
+    response: ImageReferenceFolderChooseResult;
+  };
+  [IPC_CHANNELS.IMAGE_REFERENCE_FOLDER_INSPECT]: {
+    request: ImageReferenceFolderInspectInput;
+    response: ImageReferenceFolderInspectResult;
   };
   [IPC_CHANNELS.SCRIPTS_LIST]: {
     request: undefined;
@@ -636,11 +666,16 @@ export interface RosterApi {
   listImages(): Promise<ImageLibraryItem[]>;
   saveImage(input: ImageSaveInput): Promise<ImageLibraryItem>;
   softDeleteImage(input: ImageSoftDeleteInput): Promise<ImageSoftDeleteResult>;
+  reviewImage(input: ImageReviewInput): Promise<ImageLibraryItem>;
   generateImagePrompts(input: ImagePromptWorkspaceGenerateInput): Promise<ImagePromptWorkspaceGenerateResult>;
   listImageScenePresets(): Promise<ImageScenePreset[]>;
   saveImageScenePreset(input: ImageScenePresetSaveInput): Promise<ImageScenePreset>;
   generateImages(input: ImageWorkspaceGenerateInput): Promise<ImageWorkspaceGenerateResult>;
   generateImagesAdHoc(input: ImageWorkspaceAdHocGenerateInput): Promise<ImageWorkspaceAdHocGenerateResult>;
+  generateImageEdits(input: ImageWorkspaceEditGenerateInput): Promise<ImageWorkspaceGenerateResult & { promptIds: string[] }>;
+  chooseImageReferenceFiles(): Promise<ImageReferenceFileChooseResult>;
+  chooseImageReferenceFolder(): Promise<ImageReferenceFolderChooseResult>;
+  inspectImageReferenceFolder(input: ImageReferenceFolderInspectInput): Promise<ImageReferenceFolderInspectResult>;
   listScripts(): Promise<ScriptRecord[]>;
   saveScript(input: ScriptSaveInput): Promise<ScriptRecord>;
   exportScripts(input: ScriptExportInput): Promise<ScriptExportResult>;

@@ -18,6 +18,7 @@ export const AppSettingsSchema = z.object({
   providerConcurrencyLimit: z.number().int().min(1).max(20).default(3),
   providerRetryCount: z.number().int().min(0).max(10).default(3),
   providerRetryBaseDelayMs: z.number().int().min(100).max(60_000).default(1000),
+  imageStudioResultHandling: z.enum(["auto_library", "manual_review"]).default("manual_review"),
   llmProviderConfigs: z.array(LlmProviderConfigSchema).default([...DEFAULT_LLM_PROVIDER_CONFIGS]),
   imageProviderConfigs: z.array(ImageProviderConfigSchema).default([...DEFAULT_IMAGE_PROVIDER_CONFIGS]),
   monthlyBudgetWarningCents: z.number().int().min(0).max(100_000_000).default(0),

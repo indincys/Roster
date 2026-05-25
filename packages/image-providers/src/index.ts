@@ -7,6 +7,7 @@ import {
   type ImageGenerationQuality,
   type ImageGenerationResolution
 } from "@roster/shared-types";
+import { readFile } from "node:fs/promises";
 
 export type ImageProviderId = string;
 export type ImageAspectRatio = "1:1" | "3:4" | "9:16" | "16:9";
@@ -20,8 +21,16 @@ export interface ImageGenerateRequest {
   resolution: ImageGenerationResolution;
   quality: ImageGenerationQuality;
   outputFormat: ImageGenerationOutputFormat;
+  referenceImages?: ImageReferenceImage[];
   apiKey?: string;
   signal?: AbortSignal;
+}
+
+export interface ImageReferenceImage {
+  absolutePath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
 }
 
 export interface GeneratedImageRef {
@@ -86,14 +95,16 @@ function escapeSvgText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").slice(0, 120);
 }
 
-function buildMockImageSvg(input: { prompt: string; index: number; width: number; height: number }): Buffer {
+function buildMockImageSvg(input: { prompt: string; index: number; width: number; height: number; references?: string[] }): Buffer {
   const safePrompt = escapeSvgText(input.prompt);
+  const safeReferences = escapeSvgText((input.references ?? []).join(", "));
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${input.width}" height="${input.height}">
   <rect width="100%" height="100%" fill="#f7f7f8"/>
   <rect x="48" y="48" width="${input.width - 96}" height="${input.height - 96}" rx="8" fill="#ffffff" stroke="#d4d4d8"/>
   <text x="80" y="120" font-size="32" fill="#18181b">Mock Image ${input.index + 1}</text>
   <text x="80" y="176" font-size="22" fill="#52525b">${safePrompt}</text>
+  <text x="80" y="224" font-size="18" fill="#71717a">${safeReferences ? `Refs: ${safeReferences}` : "Text to image"}</text>
 </svg>`,
     "utf8"
   );
@@ -123,7 +134,12 @@ export class MockImageProvider implements ImageProvider {
       model: request.model,
       images: Array.from({ length: request.count }, (_, index) => ({
         id: `mock-image-${Date.now()}-${index}`,
-        bytes: buildMockImageSvg({ prompt: request.prompt, index, ...dimensions }),
+        bytes: buildMockImageSvg({
+          prompt: request.prompt,
+          index,
+          references: request.referenceImages?.map((image) => image.fileName),
+          ...dimensions
+        }),
         extension: "svg",
         mimeType: "image/svg+xml",
         prompt: request.prompt,
@@ -216,6 +232,25 @@ function validateImageGenerateRequest(request: ImageGenerateRequest): void {
   }
   if (!IMAGE_GENERATION_RESOLUTIONS_BY_ASPECT_RATIO[request.ratio].includes(request.resolution)) {
     throw new ImageProviderError(`${request.ratio} does not support ${request.resolution} resolution`, "invalid_request");
+  }
+  validateReferenceImages(request.referenceImages ?? []);
+}
+
+function validateReferenceImages(referenceImages: ImageReferenceImage[]): void {
+  if (referenceImages.length === 0) {
+    return;
+  }
+  if (referenceImages.length > 15) {
+    throw new ImageProviderError("Reference images must be 15 files or fewer", "invalid_request");
+  }
+  for (const image of referenceImages) {
+    if (image.sizeBytes > 50 * 1024 * 1024) {
+      throw new ImageProviderError(`Reference image is larger than 50MB: ${image.fileName}`, "invalid_request");
+    }
+    const extension = image.fileName.toLowerCase().split(".").pop() ?? "";
+    if (!["png", "jpg", "jpeg", "webp"].includes(extension)) {
+      throw new ImageProviderError(`Unsupported reference image type: ${image.fileName}`, "invalid_request");
+    }
   }
 }
 
@@ -342,6 +377,9 @@ export class OpenAIImageProvider implements ImageProvider {
     validateImageGenerateRequest(request);
     const apiKey = requireApiKey(request, this.apiKey);
     const size = imageSize(request.ratio, request.resolution);
+    if ((request.referenceImages ?? []).length > 0) {
+      return this.generateEdit(request, apiKey, size);
+    }
     const response = await this.fetchImpl(`${this.baseUrl}/images/generations`, {
       method: "POST",
       headers: {
@@ -356,6 +394,47 @@ export class OpenAIImageProvider implements ImageProvider {
         quality: request.quality,
         format: request.outputFormat
       }),
+      signal: request.signal
+    });
+    const body = await parseJsonResponse(response);
+    if (!response.ok) {
+      throw new ImageProviderError(providerErrorMessage(body), "provider_error");
+    }
+    const htmlMessage = htmlResponseMessage(body);
+    if (htmlMessage) {
+      throw new ImageProviderError(htmlMessage, "provider_error");
+    }
+    const dimensions = imageDimensions(request.ratio, request.resolution);
+    const images = await this.imagesFromResponse(body, request, dimensions);
+    if (images.length === 0) {
+      throw new ImageProviderError(`Image provider returned no image data: ${compactResponseBody(body)}`, "provider_error");
+    }
+    return {
+      provider: this.id,
+      model: request.model,
+      images
+    };
+  }
+
+  private async generateEdit(request: ImageGenerateRequest, apiKey: string, size: string): Promise<ImageGenerateResult> {
+    const formData = new FormData();
+    for (const image of request.referenceImages ?? []) {
+      const bytes = await readFile(image.absolutePath);
+      formData.append("image", new Blob([new Uint8Array(bytes)], { type: image.mimeType }), image.fileName);
+    }
+    formData.append("prompt", request.prompt);
+    formData.append("model", request.model);
+    formData.append("n", String(request.count));
+    formData.append("size", size);
+    formData.append("quality", request.quality);
+
+    const response = await this.fetchImpl(`${this.baseUrl}/images/edits`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: formData,
       signal: request.signal
     });
     const body = await parseJsonResponse(response);

@@ -1159,6 +1159,27 @@ async function main() {
       "title workspace did not persist selected generated titles"
     );
 
+    await evaluate(
+      client,
+      `window.roster.saveSettings({ imageStudioResultHandling: "manual_review" })`
+    );
+    const imagePromptIds = await evaluate(
+      client,
+      `Promise.all([
+        window.roster.savePrompt({ text: "Electron 文生图批量主图，白底商品摄影", scene: "主图", status: "active" }),
+        window.roster.savePrompt({ text: "Electron 文生图批量详情页，柔和自然光", scene: "详情页", status: "active" }),
+        window.roster.savePrompt({ text: "Electron 图生图参考图，保持主体并统一背景", scene: "主图", status: "active" })
+      ]).then((prompts) => prompts.map((prompt) => prompt.id))`
+    );
+    const singleReferencePath = path.join(workspaceRoot, "reference-fixtures", "single-ref.png");
+    const mixedReferenceDir = path.join(workspaceRoot, "reference-fixtures", "mixed");
+    await mkdir(path.dirname(singleReferencePath), { recursive: true });
+    await mkdir(path.join(mixedReferenceDir, "sku-a"), { recursive: true });
+    await writeFile(singleReferencePath, Buffer.from("single-reference"));
+    await writeFile(path.join(mixedReferenceDir, "root-ref.png"), Buffer.from("root-reference"));
+    await writeFile(path.join(mixedReferenceDir, "sku-a", "front.jpg"), Buffer.from("front-reference"));
+    await writeFile(path.join(mixedReferenceDir, "sku-a", "side.webp"), Buffer.from("side-reference"));
+
     await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'images' })");
     await waitFor(
       () => evaluate(client, `document.querySelector('[data-image-studio]') !== null`),
@@ -1175,182 +1196,200 @@ async function main() {
       () =>
         evaluate(
           client,
-          `document.querySelector('[data-image-prompt-skill-select]')?.value === "image-prompt-01" && document.body.innerText.includes("Electron 图片提示词 Skill")`
+          `document.querySelector('[data-image-primary-mode="text"]') !== null &&
+            document.querySelector('[data-image-run-mode="single"]') !== null &&
+            document.querySelector('[data-image-primary-mode-btn="text"]')?.innerText.includes("文生图") &&
+            document.querySelector('[data-image-primary-mode-btn="image"]')?.innerText.includes("图生图") &&
+            document.querySelector('[data-image-run-mode-btn="single"]')?.innerText.includes("单次") &&
+            document.querySelector('[data-image-run-mode-btn="batch"]')?.innerText.includes("批量")`
         ),
-      "enabled image prompt Skill appears in Image Studio",
+      "image studio text/image tabs rendered",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-image-add-scene]').click()`);
-    await evaluate(
+    const retiredImageEntryVisible = await evaluate(
       client,
-      `(() => {
-        const name = document.querySelector('[data-new-image-scene-name]');
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-        setter.call(name, "海报素材");
-        name.dispatchEvent(new Event("input", { bubbles: true }));
-        document.querySelector('[data-image-aspect-ratio]')?.dispatchEvent(new Event("noop"));
-        document.querySelector('[data-create-image-scene]').click();
-      })()`
+      `["批量生产", "模板套图", "快速单图"].some((label) => document.body.innerText.includes(label))`
     );
+    assert(!retiredImageEntryVisible, "retired image studio entries are still visible");
+    await waitFor(
+      () => evaluate(client, `document.body.innerText.includes("Provider 1")`),
+      "image studio mock provider selected",
+      10_000
+    );
+
+    await evaluate(client, `document.querySelector('[data-generate-images]').click()`);
     await waitFor(
       () =>
         evaluate(
           client,
-          `document.body.innerText.includes("已新增场景预设：海报素材") && document.querySelector('[data-image-scene-preset="海报素材"]')?.className.includes("active") === true`
+          `window.roster.listImages().then((images) => images.length >= 1 && document.body.innerText.includes("审核生成结果"))`
         ),
-      "custom image scene preset saved through real UI",
-      10_000
-    );
-    await evaluate(
-      client,
-      `(() => {
-        document.querySelector('[data-image-scene-preset="详情页"]').click();
-      })()`
-    );
-    await waitFor(
-      () => evaluate(client, `document.querySelector('[data-image-scene-preset-summary]')?.innerText.includes("images/detail") === true`),
-      "builtin detail scene defaults applied",
-      10_000
-    );
-    await evaluate(client, `document.querySelector('[data-image-add-scene]').click()`);
-    await evaluate(
-      client,
-      `(() => {
-        const name = document.querySelector('[data-new-image-scene-name]');
-        const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-        inputSetter.call(name, "详情海报");
-        name.dispatchEvent(new Event("input", { bubbles: true }));
-        document.querySelector('[data-create-image-scene]').click();
-      })()`
-    );
-    await waitFor(
-      () =>
-        evaluate(
-          client,
-          `document.body.innerText.includes("已新增场景预设：详情海报") && document.querySelector('[data-image-scene-preset="详情海报"]')?.className.includes("active") === true && document.querySelector('[data-image-scene-preset-summary]')?.innerText.includes("images/detail")`
-        ),
-      "custom image scene preset defaults applied",
-      10_000
-    );
-    const imageSceneDb = openWorkspaceDb();
-    try {
-      const scenePreset = imageSceneDb
-        .prepare("SELECT * FROM image_scene_presets WHERE name = '详情海报'")
-        .get();
-      assert(scenePreset, "custom image scene preset was not written to workspace.db");
-      assert(scenePreset.default_output_subdir === "detail", "custom image scene preset did not persist output subdir");
-      assert(scenePreset.default_aspect_ratio === "16:9", "custom image scene preset did not persist aspect ratio");
-    } finally {
-      imageSceneDb.close();
-    }
-    const imageSeedDebug = await evaluate(
-      client,
-      `(() => ({
-        hasSeedButton: document.querySelector('[data-generate-image-prompts]') !== null,
-        activeStep: document.querySelector('.steps .active')?.innerText ?? "",
-        visibleText: document.body.innerText.slice(0, 1200),
-        buttons: Array.from(document.querySelectorAll('button')).slice(0, 30).map((button) => button.innerText)
-      }))()`
-    );
-    assert(imageSeedDebug.hasSeedButton, `image seed generate button missing: ${JSON.stringify(imageSeedDebug)}`);
-    await evaluate(client, `document.querySelector('[data-generate-image-prompts]').click()`);
-    await waitFor(
-      () =>
-        evaluate(
-          client,
-          `document.querySelectorAll('[data-draft-image-prompt]').length >= 5 && document.body.innerText.includes("mock / mock-title-fast") && document.body.innerText.includes("此步骤未调用图片 API")`
-        ),
-      "image prompt drafts generated through LLM Skill path",
-      10_000
-    );
-    const imagePromptAuditDb = openWorkspaceDb();
-    try {
-      const imagePromptTextLogCount = imagePromptAuditDb
-        .prepare("SELECT COUNT(*) AS count FROM api_call_log WHERE provider = 'mock' AND workflow = 'image_prompt_workspace' AND status = 'success'")
-        .get().count;
-      assert(imagePromptTextLogCount >= 1, "image prompt text generation was not written to api_call_log");
-      const prematureImageProviderLogCount = imagePromptAuditDb
-        .prepare("SELECT COUNT(*) AS count FROM api_call_log WHERE workflow = 'image_workspace'")
-        .get().count;
-      assert(prematureImageProviderLogCount === 0, "image prompt generation unexpectedly called image provider workflow");
-    } finally {
-      imagePromptAuditDb.close();
-    }
-    await evaluate(client, `document.querySelector('[data-save-image-prompts]').click()`);
-    await waitFor(
-      () =>
-        evaluate(
-          client,
-          `window.roster.listImages().then((images) => images.length >= 4 && document.body.innerText.includes("出图完成") && document.querySelectorAll('[data-image-card]').length >= 4)`
-        ),
-      "mock images generated and displayed",
+      "text-to-image single mock generation completed",
       10_000
     );
     await waitFor(
-      () =>
-        evaluate(
-          client,
-          `document.querySelector('[data-image-generation-progress]')?.innerText.match(/\\d+\\s*\\/\\s*\\d+/) !== null`
-        ),
+      () => evaluate(client, `document.querySelector('[data-image-generation-progress]')?.innerText.match(/\\d+\\s*\\/\\s*\\d+/) !== null`),
       "image generation progress persisted in real UI",
       10_000
     );
-    const savedImages = await evaluate(client, `window.roster.listImages()`);
-    assert(savedImages.length >= 4, "image studio did not save images to SQLite");
-    assert(savedImages.every((image) => image.relativePath.startsWith("images/detail/")), "custom image scene did not route generated images under workspace images/detail");
-    for (const image of savedImages.slice(0, 4)) {
-      assert(existsSync(path.join(workspaceRoot, image.relativePath)), `generated image file missing: ${image.relativePath}`);
-    }
-    const imageToRegenerate = savedImages.find((image) => image.promptId);
-    assert(imageToRegenerate, "no generated image had prompt lineage for regeneration");
-    await evaluate(client, `document.querySelector('[data-enter-image-review]').click()`);
+    const firstImageBatch = await evaluate(client, `window.roster.listImages()`);
+    const pendingLibraryCandidate = firstImageBatch.find((image) => image.status === "active" && image.reviewStatus === "pending");
+    assert(pendingLibraryCandidate, "manual review image was not saved as pending");
+    assert(existsSync(path.join(workspaceRoot, pendingLibraryCandidate.relativePath)), `generated image file missing: ${pendingLibraryCandidate.relativePath}`);
+    await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'lib_images' })");
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-regenerate-image="${imageToRegenerate.id}"]') !== null`),
-      "image review stage exposes regeneration action",
+      () => evaluate(client, `document.body.innerText.includes("图片库")`),
+      "image library page after pending generation",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-regenerate-image="${imageToRegenerate.id}"]').click()`);
+    const pendingVisibleInLibrary = await evaluate(client, `document.body.innerText.includes(${js(pendingLibraryCandidate.fileName)})`);
+    assert(!pendingVisibleInLibrary, "pending manual-review image appeared in the usable image library");
+
+    await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'images' })");
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-confirm-image-regenerate]') !== null`),
-      "image regeneration confirmation drawer opens",
+      () => evaluate(client, `document.querySelector('[data-image-studio]') !== null`),
+      "image studio returned for text batch",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-confirm-image-regenerate]').click()`);
     await waitFor(
-      () => evaluate(client, `document.body.innerText.includes("已再生成并入库")`),
-      "single image regeneration completed in real UI",
+      () => evaluate(client, `document.querySelector('[data-image-review-card]') !== null && document.body.innerText.includes("审核生成结果")`),
+      "image studio restores completed task review after page switch",
       10_000
     );
-    let imagesAfterRegenerate = await evaluate(client, `window.roster.listImages()`);
-    assert(imagesAfterRegenerate.length >= savedImages.length + 1, "single image regeneration did not save a new image");
-    const imageToSoftDelete = imagesAfterRegenerate.find((image) => image.status === "active" && image.promptId);
-    assert(imageToSoftDelete, "no active generated image available for batch reject");
-    await evaluate(client, `document.querySelector('[data-select-image="${imageToSoftDelete.id}"]').click()`);
+    await evaluate(client, `document.querySelector('[data-image-run-mode-btn="batch"]').click()`);
     await waitFor(
-      () => evaluate(client, `document.querySelector('[data-batch-reject-images]') !== null`),
-      "batch image reject button enabled after selecting images",
+      () => evaluate(client, `document.querySelector('[data-image-run-mode="batch"]') !== null && document.body.innerText.includes("从提示词库批量生成图片")`),
+      "text-to-image batch mode selected",
       10_000
     );
-    await evaluate(client, `document.querySelector('[data-batch-reject-images]').click()`);
+    await evaluate(client, `document.querySelector('[data-generate-images]').click()`);
     await waitFor(
       () =>
         evaluate(
           client,
-          `window.roster.listImages().then((images) => images.find((image) => image.id === "${imageToSoftDelete.id}")?.status === "soft_deleted" && document.body.innerText.includes("已批量拒绝"))`
+          `window.roster.listImages().then((images) => images.length >= ${firstImageBatch.length + imagePromptIds.length} && document.body.innerText.includes("审核生成结果"))`
         ),
-      "batch image reject completed in real UI",
+      "text-to-image batch mock generation completed",
+      10_000
+    );
+    const imagesAfterTextBatch = await evaluate(client, `window.roster.listImages()`);
+
+    await evaluate(client, `document.querySelector('[data-image-primary-mode-btn="image"]').click()`);
+    await evaluate(client, `document.querySelector('[data-image-run-mode-btn="single"]').click()`);
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-image-reference-dropzone]') !== null`),
+      "image-to-image single dropzone available",
+      10_000
+    );
+    await evaluate(
+      client,
+      `(() => {
+        const file = new File([new Uint8Array([1, 2, 3])], "single-ref.png", { type: "image/png" });
+        Object.defineProperty(file, "path", { value: ${js(singleReferencePath)} });
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        const dropzone = document.querySelector('[data-image-reference-dropzone]');
+        dropzone.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+      })()`
+    );
+    await waitFor(
+      () => evaluate(client, `document.body.innerText.includes("single-ref.png")`),
+      "image-to-image single reference loaded",
+      10_000
+    );
+    await evaluate(client, `document.querySelector('[data-generate-images]').click()`);
+    await waitFor(
+      () =>
+        evaluate(
+          client,
+          `window.roster.listImages().then((images) => images.length >= ${imagesAfterTextBatch.length + 1} && document.body.innerText.includes("审核生成结果"))`
+        ),
+      "image-to-image single mock generation completed",
+      10_000
+    );
+
+    const mixedInitial = await evaluate(
+      client,
+      `window.roster.inspectImageReferenceFolder({ folderPath: ${js(mixedReferenceDir)} })`
+    );
+    assert(mixedInitial.structure === "mixed" && mixedInitial.requiresMixedMode, "mixed folder scan did not require a mixed-mode decision");
+    const mixedAll = await evaluate(
+      client,
+      `window.roster.inspectImageReferenceFolder({ folderPath: ${js(mixedReferenceDir)}, mixedMode: "all" })`
+    );
+    assert(mixedAll.tasks.length === 2, `expected two mixed image reference tasks, got ${mixedAll.tasks.length}`);
+    const editBatchJobs = mixedAll.tasks.map((task, index) => ({
+      promptId: imagePromptIds[index % imagePromptIds.length],
+      references: task.references
+    }));
+    const imagesBeforeEditBatch = await evaluate(client, `window.roster.listImages()`);
+    const editBatchResult = await evaluate(
+      client,
+      `window.roster.generateImageEdits({
+        scene: "主图",
+        jobs: ${js(editBatchJobs)},
+        provider: "mock",
+        model: "mock-image",
+        targets: [{ provider: "mock", model: "mock-image" }],
+        generationStrategy: "load_balance",
+        aspectRatio: "1:1",
+        resolution: "1k",
+        quality: "auto",
+        outputFormat: "png",
+        perPromptCount: 1,
+        outputSubdir: "main",
+        resultHandling: "manual_review"
+      })`
+    );
+    assert(editBatchResult.savedImages.length === 2, "image-to-image batch mock generation did not save expected images");
+    const imagesAfterEditBatch = await evaluate(client, `window.roster.listImages()`);
+    assert(imagesAfterEditBatch.length >= imagesBeforeEditBatch.length + 2, "image-to-image batch results were not persisted");
+
+    await evaluate(client, `document.querySelector('[data-enter-image-review]')?.click()`);
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-image-review-card]') !== null`),
+      "image review stage exposes generated results",
+      10_000
+    );
+    const imageToSoftDeleteId = await evaluate(
+      client,
+      `document.querySelector('[data-image-review-card]')?.getAttribute('data-image-review-card')`
+    );
+    const imageToSoftDelete = await evaluate(
+      client,
+      `window.roster.listImages().then((images) => images.find((image) => image.id === ${js(imageToSoftDeleteId)}))`
+    );
+    assert(imageToSoftDelete, "no pending generated image available for review actions");
+    await evaluate(client, `document.querySelector('[data-approve-image="${imageToSoftDelete.id}"]').click()`);
+    await waitFor(
+      () =>
+        evaluate(
+          client,
+          `window.roster.listImages().then((images) => images.find((image) => image.id === "${imageToSoftDelete.id}")?.reviewStatus === "approved")`
+        ),
+      "image approval completed in real UI",
+      10_000
+    );
+    const approvedImage = await evaluate(
+      client,
+      `window.roster.listImages().then((images) => images.find((image) => image.id === "${imageToSoftDelete.id}"))`
+    );
+    await evaluate(client, `document.querySelector('[data-reject-image="${imageToSoftDelete.id}"]').click()`);
+    await waitFor(
+      () =>
+        evaluate(
+          client,
+          `window.roster.listImages().then((images) => images.find((image) => image.id === "${imageToSoftDelete.id}")?.status === "soft_deleted")`
+        ),
+      "image reject completed in real UI",
       10_000
     );
     const imagesAfterSoftDelete = await evaluate(client, `window.roster.listImages()`);
     const softDeletedImage = imagesAfterSoftDelete.find((image) => image.id === imageToSoftDelete.id);
     assert(softDeletedImage.status === "soft_deleted", "soft-deleted image status was not persisted");
     assert(softDeletedImage.relativePath.startsWith("_trash/images/"), "soft-deleted image was not moved to _trash");
-    assert(!existsSync(path.join(workspaceRoot, imageToSoftDelete.relativePath)), "original image file still exists after soft delete");
+    assert(!existsSync(path.join(workspaceRoot, approvedImage.relativePath)), "original image file still exists after soft delete");
     assert(existsSync(path.join(workspaceRoot, softDeletedImage.relativePath)), "soft-deleted image file missing in _trash");
-    const promptsAfterSoftDelete = await evaluate(client, `window.roster.listPrompts()`);
-    const updatedPrompt = promptsAfterSoftDelete.find((prompt) => prompt.id === imageToSoftDelete.promptId);
-    assert(updatedPrompt.generatedCount >= 2, `expected prompt generated_count >= 2, got ${updatedPrompt.generatedCount}`);
-    assert(updatedPrompt.keptCount === updatedPrompt.generatedCount - 1, `expected prompt kept_count to reflect one soft delete, got ${updatedPrompt.keptCount}/${updatedPrompt.generatedCount}`);
 
     await evaluate(client, "window.__ROSTER_STORE__.setState({ page: 'scripts' })");
     await waitFor(

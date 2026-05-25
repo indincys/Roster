@@ -9,11 +9,14 @@ import {
   type CoverPreviewFrameInput,
   type CoverTimelineInput,
   type FeedbackPackageInput,
+  type ImageReferenceFolderInspectInput,
+  type ImageReviewInput,
   type ImageSaveInput,
   type ImageSoftDeleteInput,
   type ImagePromptWorkspaceGenerateInput,
   type ImageScenePresetSaveInput,
   type ImageWorkspaceAdHocGenerateInput,
+  type ImageWorkspaceEditGenerateInput,
   type ImageWorkspaceGenerateInput,
   type PlatformAccountSaveInput,
   type PromptSaveInput,
@@ -107,6 +110,7 @@ const api: RosterApi = {
   listImages: () => ipcRenderer.invoke(IPC_CHANNELS.IMAGES_LIST),
   saveImage: (input: ImageSaveInput) => ipcRenderer.invoke(IPC_CHANNELS.IMAGES_SAVE, input),
   softDeleteImage: (input: ImageSoftDeleteInput) => ipcRenderer.invoke(IPC_CHANNELS.IMAGES_SOFT_DELETE, input),
+  reviewImage: (input: ImageReviewInput) => ipcRenderer.invoke(IPC_CHANNELS.IMAGES_REVIEW, input),
   generateImagePrompts: (input: ImagePromptWorkspaceGenerateInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.IMAGE_PROMPT_WORKSPACE_GENERATE, input),
   listImageScenePresets: () => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_SCENE_PRESETS_LIST),
@@ -115,6 +119,12 @@ const api: RosterApi = {
   generateImages: (input: ImageWorkspaceGenerateInput) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE, input),
   generateImagesAdHoc: (input: ImageWorkspaceAdHocGenerateInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_ADHOC, input),
+  generateImageEdits: (input: ImageWorkspaceEditGenerateInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_EDITS, input),
+  chooseImageReferenceFiles: () => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_REFERENCE_FILES_CHOOSE),
+  chooseImageReferenceFolder: () => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_REFERENCE_FOLDER_CHOOSE),
+  inspectImageReferenceFolder: (input: ImageReferenceFolderInspectInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.IMAGE_REFERENCE_FOLDER_INSPECT, input),
   listScripts: () => ipcRenderer.invoke(IPC_CHANNELS.SCRIPTS_LIST),
   saveScript: (input: ScriptSaveInput) => ipcRenderer.invoke(IPC_CHANNELS.SCRIPTS_SAVE, input),
   exportScripts: (input: ScriptExportInput) => ipcRenderer.invoke(IPC_CHANNELS.SCRIPTS_EXPORT, input),

@@ -23,8 +23,11 @@ import {
   FeedbackPackageInputSchema,
   IPC_CHANNELS,
   ImagePromptWorkspaceGenerateInputSchema,
+  ImageReferenceFolderInspectInputSchema,
+  ImageReviewInputSchema,
   ImageScenePresetSaveInputSchema,
   ImageWorkspaceAdHocGenerateInputSchema,
+  ImageWorkspaceEditGenerateInputSchema,
   ImageWorkspaceGenerateInputSchema,
   type ImageGenerationOutputFormat,
   type ImageGenerationQuality,
@@ -83,6 +86,7 @@ import {
   type BootstrapState,
   type ApiKeyConnectionTestResult,
   type ImageProviderConfig,
+  type ImageReferenceInput,
   type LlmProviderConfig,
   type TitleWorkspaceColumnResult,
   type SoftwareUpdateCheckResult,
@@ -109,7 +113,7 @@ import {
   copyOrFallbackCoverJpeg,
   createMockTimelineThumbnails,
   createTimelineThumbnailGenerator,
-  type FfmpegToolPaths
+type FfmpegToolPaths
 } from "@roster/ffmpeg-utils";
 import {
   MockImageProvider,
@@ -118,6 +122,7 @@ import {
   imageDimensions as getImageDimensions,
   type ImageProvider
 } from "@roster/image-providers";
+import { MAX_REFERENCE_IMAGES_PER_TASK, inspectImageReferenceFolder, toImageReferenceInput } from "./image-references";
 import {
   LLMProviderError,
   AnthropicLLMProvider,
@@ -1545,7 +1550,7 @@ async function runScriptScheduledJob(job: ScheduledJobRecord, db: WorkspaceDatab
 
 async function runImageWorkspaceGeneration(
   db: WorkspaceDatabase,
-  prompts: Array<{ id: string; text: string; scene: string }>,
+  prompts: Array<{ id: string; text: string; scene: string; referenceImages?: ImageReferenceInput[] }>,
   params: {
     targets: ImageWorkspaceProviderTarget[];
     provider?: ImageWorkspaceProviderTarget["provider"];
@@ -1557,6 +1562,7 @@ async function runImageWorkspaceGeneration(
     quality: ImageGenerationQuality;
     outputFormat: ImageGenerationOutputFormat;
     outputSubdir: string;
+    reviewStatus: "pending" | "approved";
   }
 ): Promise<{ requested: number; savedImages: ImageLibraryItem[]; failed: number; errors: string[] }> {
   const workspaceRootPath = getActiveWorkspaceRootPath();
@@ -1600,6 +1606,7 @@ async function runImageWorkspaceGeneration(
           resolution,
           quality,
           outputFormat,
+          referenceImages: prompt.referenceImages,
           apiKey: providerApiKey
         });
         db.saveApiCallLog({
@@ -1633,12 +1640,17 @@ async function runImageWorkspaceGeneration(
                 aspectRatio,
                 sourceModel: `${generated.provider}/${generated.model}`,
                 status: "active",
+                reviewStatus: params.reviewStatus,
                 generatedAt: new Date().toISOString()
               })
             )
           );
         }
-        db.incrementPromptGeneratedCount(prompt.id, savedImages.length);
+        db.incrementPromptGeneratedCount(
+          prompt.id,
+          savedImages.length,
+          params.reviewStatus === "approved" ? savedImages.length : 0
+        );
         return savedImages;
       } catch (error) {
         db.saveApiCallLog({
@@ -1707,6 +1719,7 @@ async function runImageScheduledJob(job: ScheduledJobRecord, db: WorkspaceDataba
     aspectRatio: "1:1",
     sourceModel: generated.model,
     status: "active",
+    reviewStatus: "approved",
     generatedAt: new Date().toISOString()
   });
   db.incrementPromptGeneratedCount(prompt.id, 1);
@@ -2252,6 +2265,10 @@ function registerIpcHandlers(): void {
     const input = ImageSaveInputSchema.parse(payload);
     return withActiveWorkspaceDb((db) => toImageLibraryItem(db.saveImage(input)));
   });
+  ipcMain.handle(IPC_CHANNELS.IMAGES_REVIEW, async (_event, payload: unknown) => {
+    const input = ImageReviewInputSchema.parse(payload);
+    return withActiveWorkspaceDb((db) => toImageLibraryItem(db.reviewImage(input)));
+  });
   ipcMain.handle(IPC_CHANNELS.IMAGES_SOFT_DELETE, async (_event, payload: unknown): Promise<ImageSoftDeleteResult> => {
     const input = ImageSoftDeleteInputSchema.parse(payload);
     const workspaceRootPath = getActiveWorkspaceRootPath();
@@ -2294,6 +2311,34 @@ function registerIpcHandlers(): void {
         throw error;
       }
     });
+  });
+  ipcMain.handle(IPC_CHANNELS.IMAGE_REFERENCE_FILES_CHOOSE, async () => {
+    const result = await dialog.showOpenDialog({
+      title: "选择参考图",
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }]
+    });
+    if (result.canceled) {
+      return { canceled: true, references: [] };
+    }
+    const references = (
+      await Promise.all(result.filePaths.map((filePath) => toImageReferenceInput(filePath)))
+    ).filter((reference): reference is ImageReferenceInput => Boolean(reference));
+    return { canceled: false, references: references.slice(0, MAX_REFERENCE_IMAGES_PER_TASK) };
+  });
+  ipcMain.handle(IPC_CHANNELS.IMAGE_REFERENCE_FOLDER_CHOOSE, async () => {
+    const result = await dialog.showOpenDialog({
+      title: "选择参考图文件夹",
+      properties: ["openDirectory"]
+    });
+    return {
+      canceled: result.canceled,
+      folderPath: result.filePaths[0] ?? null
+    };
+  });
+  ipcMain.handle(IPC_CHANNELS.IMAGE_REFERENCE_FOLDER_INSPECT, async (_event, payload: unknown) => {
+    const input = ImageReferenceFolderInspectInputSchema.parse(payload);
+    return inspectImageReferenceFolder(input.folderPath, input.mixedMode);
   });
   ipcMain.handle(IPC_CHANNELS.IMAGE_PROMPT_WORKSPACE_GENERATE, async (_event, payload: unknown) => {
     const input = ImagePromptWorkspaceGenerateInputSchema.parse(payload);
@@ -2359,7 +2404,8 @@ function registerIpcHandlers(): void {
         resolution: input.resolution,
         quality: input.quality,
         outputFormat: input.outputFormat,
-        outputSubdir: input.outputSubdir
+        outputSubdir: input.outputSubdir,
+        reviewStatus: input.resultHandling === "manual_review" ? "pending" : "approved"
       });
       if (result.savedImages.length === 0 && result.errors.length > 0) {
         throw new Error(result.errors[0]);
@@ -2370,10 +2416,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_ADHOC, async (_event, payload: unknown) => {
     const input = ImageWorkspaceAdHocGenerateInputSchema.parse(payload);
     const modeLabels: Record<string, string> = {
-      batch: "批量生产",
-      quick: "快速单图",
+      batch: "文生图批量",
+      quick: "文生图单次",
       i2i: "图生图",
-      template: "模板套图"
+      template: "参考图批量"
     };
     return withActiveWorkspaceDb(async (db) => {
       const promptRecords = input.prompts.map((item) =>
@@ -2394,12 +2440,56 @@ function registerIpcHandlers(): void {
         resolution: input.resolution,
         quality: input.quality,
         outputFormat: input.outputFormat,
-        outputSubdir: input.outputSubdir
+        outputSubdir: input.outputSubdir,
+        reviewStatus: input.resultHandling === "manual_review" ? "pending" : "approved"
       });
       if (result.savedImages.length === 0 && result.errors.length > 0) {
         throw new Error(result.errors[0]);
       }
       return { ...result, promptIds: promptRecords.map((record) => record.id) };
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.IMAGE_WORKSPACE_GENERATE_EDITS, async (_event, payload: unknown) => {
+    const input = ImageWorkspaceEditGenerateInputSchema.parse(payload);
+    return withActiveWorkspaceDb(async (db) => {
+      const promptById = new Map(db.listPrompts().map((prompt) => [prompt.id, prompt]));
+      const prompts = input.jobs.map((job) => {
+        const existing = job.promptId ? promptById.get(job.promptId) ?? null : null;
+        if (!existing && !job.promptText) {
+          throw new Error("未找到图生图任务关联的提示词");
+        }
+        const prompt =
+          existing ??
+          db.savePrompt({
+            text: job.promptText ?? "",
+            scene: input.scene,
+            status: "active",
+            notes: `图片工作室 · 图生图${job.label ? ` · ${job.label}` : ""}`
+          });
+        return {
+          id: prompt.id,
+          text: prompt.text,
+          scene: prompt.scene,
+          referenceImages: job.references
+        };
+      });
+      const result = await runImageWorkspaceGeneration(db, prompts, {
+        targets: input.targets,
+        provider: input.provider,
+        model: input.model,
+        generationStrategy: input.generationStrategy,
+        perPromptCount: input.perPromptCount,
+        aspectRatio: input.aspectRatio,
+        resolution: input.resolution,
+        quality: input.quality,
+        outputFormat: input.outputFormat,
+        outputSubdir: input.outputSubdir,
+        reviewStatus: input.resultHandling === "manual_review" ? "pending" : "approved"
+      });
+      if (result.savedImages.length === 0 && result.errors.length > 0) {
+        throw new Error(result.errors[0]);
+      }
+      return { ...result, promptIds: prompts.map((prompt) => prompt.id) };
     });
   });
   ipcMain.handle(IPC_CHANNELS.SCRIPTS_LIST, async () => withActiveWorkspaceDb((db) => db.listScripts()));

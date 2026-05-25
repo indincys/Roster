@@ -66,6 +66,7 @@ describe("WorkspaceDatabase image library", () => {
       aspectRatio: "3:4",
       sourceModel: "mock-image",
       status: "soft_deleted",
+      reviewStatus: "approved",
       tags: "通勤",
       notes: "软删候选"
     });
@@ -138,6 +139,39 @@ describe("WorkspaceDatabase image library", () => {
       keptCount: 0
     });
     expect(secondResult.suggestedNegativePrompt).toBe(true);
+    db.close();
+  });
+
+  it("keeps manually reviewed images pending until they are approved", async () => {
+    const root = await makeWorkspaceRoot();
+    const db = await WorkspaceDatabase.open(root);
+    const prompt = db.savePrompt({
+      text: "电商主图，人工验收",
+      scene: "主图",
+      status: "active"
+    });
+    db.incrementPromptGeneratedCount(prompt.id, 1, 0);
+    const pending = db.saveImage({
+      relativePath: "images/main/pending-review.svg",
+      promptId: prompt.id,
+      scene: "主图",
+      status: "active",
+      reviewStatus: "pending"
+    });
+
+    expect(pending.reviewStatus).toBe("pending");
+    expect(db.listPrompts().find((item) => item.id === prompt.id)).toMatchObject({
+      generatedCount: 1,
+      keptCount: 0
+    });
+
+    const approved = db.reviewImage({ imageId: pending.id, reviewStatus: "approved" });
+
+    expect(approved.reviewStatus).toBe("approved");
+    expect(db.listPrompts().find((item) => item.id === prompt.id)).toMatchObject({
+      generatedCount: 1,
+      keptCount: 1
+    });
     db.close();
   });
 

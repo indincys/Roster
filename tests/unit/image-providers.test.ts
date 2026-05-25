@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ImageProviderError, MockImageProvider, OpenAIImageProvider, createDefaultImageProviders, imageDimensions, imageSize } from "@roster/image-providers";
 
@@ -20,8 +23,8 @@ describe("image providers", () => {
     expect(result.images[0]).toMatchObject({
       extension: "svg",
       mimeType: "image/svg+xml",
-      width: 768,
-      height: 1024,
+      width: 1024,
+      height: 1536,
       prompt: "白底主图"
     });
     expect(result.images[0].bytes.toString("utf8")).toContain("白底主图");
@@ -29,10 +32,10 @@ describe("image providers", () => {
 
   it("maps aspect ratios to stable dimensions", () => {
     expect(imageDimensions("1:1", "1k")).toEqual({ width: 1024, height: 1024 });
-    expect(imageDimensions("3:4", "2k")).toEqual({ width: 1536, height: 2048 });
+    expect(imageDimensions("3:4", "2k")).toEqual({ width: 1024, height: 1536 });
     expect(imageDimensions("9:16", "4k")).toEqual({ width: 2160, height: 3840 });
     expect(imageDimensions("16:9", "4k")).toEqual({ width: 3840, height: 2160 });
-    expect(imageSize("3:4", "2k")).toBe("1536x2048");
+    expect(imageSize("3:4", "2k")).toBe("1024x1536");
   });
 
   it("rejects prompts longer than the image API limit before network I/O", async () => {
@@ -78,6 +81,53 @@ describe("image providers", () => {
     ).rejects.toMatchObject({ name: "ImageProviderError", code: "invalid_request" });
   });
 
+  it("rejects invalid reference image metadata before network I/O", async () => {
+    const provider = new OpenAIImageProvider({
+      fetch: async () => {
+        throw new Error("network should not be called");
+      }
+    });
+    const baseRequest = {
+      provider: "openai" as const,
+      model: "gpt-image-2",
+      prompt: "保持商品主体，换成清爽棚拍背景",
+      count: 1,
+      ratio: "1:1" as const,
+      resolution: "1k" as const,
+      quality: "auto" as const,
+      outputFormat: "png" as const,
+      apiKey: "sk-test"
+    };
+
+    await expect(
+      provider.generate({
+        ...baseRequest,
+        referenceImages: [
+          { absolutePath: "/tmp/ref.gif", fileName: "ref.gif", mimeType: "image/gif", sizeBytes: 100 }
+        ]
+      })
+    ).rejects.toMatchObject({ name: "ImageProviderError", code: "invalid_request" });
+    await expect(
+      provider.generate({
+        ...baseRequest,
+        referenceImages: [
+          { absolutePath: "/tmp/ref.png", fileName: "ref.png", mimeType: "image/png", sizeBytes: 50 * 1024 * 1024 + 1 }
+        ]
+      })
+    ).rejects.toMatchObject({ name: "ImageProviderError", code: "invalid_request" });
+    await expect(
+      provider.generate({
+        ...baseRequest,
+        referenceImages: Array.from({ length: 16 }, (_, index) => ({
+          absolutePath: `/tmp/ref-${index}.png`,
+          fileName: `ref-${index}.png`,
+          mimeType: "image/png",
+          sizeBytes: 100
+        }))
+      })
+    ).rejects.toMatchObject({ name: "ImageProviderError", code: "invalid_request" });
+  });
+
   it("rejects canceled mock generation through a provider error", async () => {
     const controller = new AbortController();
     controller.abort();
@@ -114,7 +164,7 @@ describe("image providers", () => {
           model: "gpt-image-1.5",
           prompt: "白底主图",
           n: 1,
-          size: "864x1536",
+          size: "1024x1536",
           quality: "high",
           format: "webp"
         });
@@ -141,8 +191,63 @@ describe("image providers", () => {
 
     expect(result.provider).toBe("openai");
     expect(result.images).toHaveLength(1);
-    expect(result.images[0]).toMatchObject({ extension: "webp", mimeType: "image/webp", width: 864, height: 1536 });
+    expect(result.images[0]).toMatchObject({ extension: "webp", mimeType: "image/webp", width: 1024, height: 1536 });
     expect(result.images[0].bytes.toString("utf8")).toBe("webp-bytes");
+  });
+
+  it("sends OpenAI edit requests as multipart with repeated reference image fields", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "roster-image-edit-"));
+    const first = path.join(root, "front.png");
+    const second = path.join(root, "side.jpg");
+    await writeFile(first, Buffer.from("front-bytes"));
+    await writeFile(second, Buffer.from("side-bytes"));
+    try {
+      const provider = new OpenAIImageProvider({
+        baseUrl: "https://yunwu.ai/v1",
+        fetch: async (url, init) => {
+          expect(String(url)).toBe("https://yunwu.ai/v1/images/edits");
+          expect(init?.method).toBe("POST");
+          expect(init?.headers).toMatchObject({
+            Accept: "application/json",
+            Authorization: "Bearer sk-test"
+          });
+          const form = init?.body as FormData;
+          expect(form).toBeInstanceOf(FormData);
+          expect(form.get("model")).toBe("gpt-image-2");
+          expect(form.get("prompt")).toBe("参考两张商品图，生成统一棚拍主图");
+          expect(form.get("n")).toBe("2");
+          expect(form.get("size")).toBe("1536x864");
+          expect(form.get("quality")).toBe("auto");
+          expect(form.getAll("image")).toHaveLength(2);
+          return new Response(
+            JSON.stringify({
+              data: [{ b64_json: Buffer.from("edit-a").toString("base64") }, { b64_json: Buffer.from("edit-b").toString("base64") }]
+            }),
+            { status: 200 }
+          );
+        }
+      });
+
+      const result = await provider.generate({
+        provider: "yunwu",
+        model: "gpt-image-2",
+        prompt: "参考两张商品图，生成统一棚拍主图",
+        count: 2,
+        ratio: "16:9",
+        resolution: "1k",
+        quality: "auto",
+        outputFormat: "png",
+        apiKey: "sk-test",
+        referenceImages: [
+          { absolutePath: first, fileName: "front.png", mimeType: "image/png", sizeBytes: 11 },
+          { absolutePath: second, fileName: "side.jpg", mimeType: "image/jpeg", sizeBytes: 10 }
+        ]
+      });
+
+      expect(result.images.map((image) => image.bytes.toString("utf8"))).toEqual(["edit-a", "edit-b"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("downloads OpenAI image bytes from URL responses", async () => {

@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import {
   ApiCallLogSaveInputSchema,
   ImageScenePresetSaveInputSchema,
+  ImageReviewInputSchema,
   ImageSaveInputSchema,
   ImageSoftDeleteInputSchema,
   PlatformAccountSaveInputSchema,
@@ -28,6 +29,8 @@ import {
   VideoUpdateInputSchema,
   type ApiCallLogSaveInput,
   type ImageRecord,
+  type ImageReviewInput,
+  type ImageReviewStatus,
   type ImageSceneAspectRatio,
   type ImageSceneOutputSubdir,
   type ImageScenePreset,
@@ -180,6 +183,7 @@ interface ImageRow {
   aspect_ratio: string | null;
   source_model: string | null;
   status: string;
+  review_status: string;
   tags: string | null;
   notes: string | null;
   generated_at: string | null;
@@ -688,6 +692,7 @@ function coerceImageRow(row: Record<string, unknown>): ImageRow {
     aspect_ratio: rowOptionalString(row, "aspect_ratio"),
     source_model: rowOptionalString(row, "source_model"),
     status: rowString(row, "status"),
+    review_status: rowOptionalString(row, "review_status") ?? "approved",
     tags: rowOptionalString(row, "tags"),
     notes: rowOptionalString(row, "notes"),
     generated_at: rowOptionalString(row, "generated_at"),
@@ -708,6 +713,7 @@ function mapImageRow(row: ImageRow): ImageRecord {
     aspectRatio: row.aspect_ratio,
     sourceModel: row.source_model,
     status: row.status as ImageStatus,
+    reviewStatus: row.review_status as ImageReviewStatus,
     tags: row.tags,
     notes: row.notes,
     generatedAt: row.generated_at,
@@ -1887,8 +1893,8 @@ export class WorkspaceDatabase {
       .prepare(
         `INSERT INTO images (
           id, prompt_id, relative_path, file_name, scene, width, height, aspect_ratio,
-          source_model, status, tags, notes, generated_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          source_model, status, review_status, tags, notes, generated_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           prompt_id = excluded.prompt_id,
           relative_path = excluded.relative_path,
@@ -1899,6 +1905,7 @@ export class WorkspaceDatabase {
           aspect_ratio = excluded.aspect_ratio,
           source_model = excluded.source_model,
           status = excluded.status,
+          review_status = excluded.review_status,
           tags = excluded.tags,
           notes = excluded.notes,
           generated_at = excluded.generated_at,
@@ -1915,6 +1922,7 @@ export class WorkspaceDatabase {
         parsed.aspectRatio || null,
         parsed.sourceModel || null,
         parsed.status,
+        parsed.reviewStatus,
         parsed.tags || null,
         parsed.notes || null,
         parsed.generatedAt || null,
@@ -1927,6 +1935,46 @@ export class WorkspaceDatabase {
       throw new Error("图片记录保存后无法读取");
     }
     return mapImageRow(coerceImageRow(saved));
+  }
+
+  reviewImage(input: ImageReviewInput): ImageRecord {
+    const parsed = ImageReviewInputSchema.parse(input);
+    const timestamp = nowIso();
+    let image: ImageRecord | null = null;
+    this.runInTransaction(() => {
+      const existing = this.db.prepare("SELECT * FROM images WHERE id = ?").get(parsed.imageId);
+      if (!existing) {
+        throw new Error("图片不存在");
+      }
+      const current = mapImageRow(coerceImageRow(existing));
+      this.db
+        .prepare(
+          `UPDATE images
+          SET review_status = ?,
+            updated_at = ?
+          WHERE id = ?`
+        )
+        .run(parsed.reviewStatus, timestamp, parsed.imageId);
+      if (current.promptId && current.reviewStatus !== "approved" && parsed.reviewStatus === "approved") {
+        this.db
+          .prepare(
+            `UPDATE prompts
+            SET kept_count = kept_count + 1,
+              updated_at = ?
+            WHERE id = ?`
+          )
+          .run(timestamp, current.promptId);
+      }
+      const saved = this.db.prepare("SELECT * FROM images WHERE id = ?").get(parsed.imageId);
+      if (!saved) {
+        throw new Error("图片审核后无法读取");
+      }
+      image = mapImageRow(coerceImageRow(saved));
+    });
+    if (!image) {
+      throw new Error("图片审核后无法读取");
+    }
+    return image;
   }
 
   getImage(imageId: string): ImageRecord | null {

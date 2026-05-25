@@ -1175,6 +1175,22 @@ export function SettingsPage(): JSX.Element {
                   onChange={(event) => void saveSettings({ providerRetryCount: Number.parseInt(event.target.value, 10) || 0 })}
                   data-setting-provider-retry
                 />
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-foreground">图片工作室结果处理</span>
+                  <select
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
+                    value={settings?.imageStudioResultHandling ?? "manual_review"}
+                    onChange={(event) =>
+                      void saveSettings({
+                        imageStudioResultHandling: event.target.value as AppSettings["imageStudioResultHandling"]
+                      })
+                    }
+                    data-setting-image-studio-result-handling
+                  >
+                    <option value="manual_review">人工验收后入库</option>
+                    <option value="auto_library">生成后自动入库</option>
+                  </select>
+                </label>
               </div>
               <div className="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2">
                 <Info label="当前版本" value={bootstrap?.appVersion ?? "-"} />

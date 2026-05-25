@@ -423,6 +423,12 @@ CREATE TABLE IF NOT EXISTS image_scene_presets (
 CREATE INDEX IF NOT EXISTS idx_image_scene_presets_name ON image_scene_presets(name);
 `;
 
+export const WORKSPACE_IMAGE_REVIEW_STATUS_SQL = `
+ALTER TABLE images ADD COLUMN review_status TEXT NOT NULL DEFAULT 'approved';
+
+CREATE INDEX IF NOT EXISTS idx_images_review_status ON images(review_status);
+`;
+
 export const CONFIG_MIGRATIONS: SqlMigration[] = [
   {
     id: "0001_config_schema",
@@ -506,5 +512,9 @@ export const WORKSPACE_MIGRATIONS: SqlMigration[] = [
   {
     id: "0016_image_scene_presets",
     sql: WORKSPACE_IMAGE_SCENE_PRESETS_SQL
+  },
+  {
+    id: "0017_image_review_status",
+    sql: WORKSPACE_IMAGE_REVIEW_STATUS_SQL
   }
 ];

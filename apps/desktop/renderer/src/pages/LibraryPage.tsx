@@ -289,11 +289,12 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
   }, [isScriptsPage, query, scripts]);
 
   const filteredImages = useMemo(() => {
+    const availableImages = images.filter((image) => image.status !== "active" || (image.reviewStatus ?? "approved") === "approved");
     const normalizedQuery = query.trim().toLowerCase();
     if (!isImagesPage || !normalizedQuery) {
-      return images;
+      return availableImages;
     }
-    return images.filter((image) =>
+    return availableImages.filter((image) =>
       [
         image.fileName,
         image.relativePath,
@@ -303,6 +304,7 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
         image.aspectRatio,
         image.sourceModel,
         image.status,
+        image.reviewStatus ?? "approved",
         image.tags,
         image.notes
       ]
@@ -350,7 +352,7 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
           ? prompts.filter((prompt) => prompt.status === "active").length
           : isScriptsPage
             ? scripts.filter((script) => script.status === "active").length
-            : images.filter((image) => image.status === "active").length;
+            : images.filter((image) => image.status === "active" && (image.reviewStatus ?? "approved") === "approved").length;
   const testCount = isTagsPage
     ? tags.filter((tag) => tag.tagGroup === "test").length
     : isTitlesPage
@@ -359,7 +361,7 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
         ? prompts.filter((prompt) => prompt.status !== "active").length
         : isScriptsPage
           ? scripts.filter((script) => script.status === "archived").length
-          : images.filter((image) => image.status !== "active").length;
+          : images.filter((image) => image.status !== "active" || (image.reviewStatus ?? "approved") !== "approved").length;
   const displayedCount = isTagsPage
     ? filteredTags.length
     : isTitlesPage
@@ -679,6 +681,7 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
         aspectRatio: imageForm.aspectRatio || null,
         sourceModel: imageForm.sourceModel || null,
         status: imageForm.status,
+        reviewStatus: images.find((image) => image.id === selectedImageId)?.reviewStatus ?? "approved",
         tags: imageForm.tags || null,
         notes: imageForm.notes || null,
         generatedAt: imageForm.generatedAt || null

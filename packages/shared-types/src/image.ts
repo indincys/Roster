@@ -3,6 +3,7 @@ import { RelativeWorkspacePathSchema } from "./path";
 import { PromptRecordSchema } from "./prompt";
 
 export const ImageStatusSchema = z.enum(["active", "soft_deleted", "archived"]);
+export const ImageReviewStatusSchema = z.enum(["pending", "approved"]);
 
 export const ImageRecordSchema = z.object({
   id: z.string().min(1),
@@ -15,6 +16,7 @@ export const ImageRecordSchema = z.object({
   aspectRatio: z.string().nullable(),
   sourceModel: z.string().nullable(),
   status: ImageStatusSchema,
+  reviewStatus: ImageReviewStatusSchema.default("approved"),
   tags: z.string().nullable(),
   notes: z.string().nullable(),
   generatedAt: z.string().nullable(),
@@ -36,6 +38,7 @@ export const ImageSaveInputSchema = z.object({
   aspectRatio: z.string().trim().nullable().optional(),
   sourceModel: z.string().trim().nullable().optional(),
   status: ImageStatusSchema.default("active"),
+  reviewStatus: ImageReviewStatusSchema.default("approved"),
   tags: z.string().trim().nullable().optional(),
   notes: z.string().trim().nullable().optional(),
   generatedAt: z.string().trim().nullable().optional()
@@ -43,6 +46,11 @@ export const ImageSaveInputSchema = z.object({
 
 export const ImageSoftDeleteInputSchema = z.object({
   imageId: z.string().min(1)
+});
+
+export const ImageReviewInputSchema = z.object({
+  imageId: z.string().min(1),
+  reviewStatus: ImageReviewStatusSchema
 });
 
 export const ImageSoftDeleteResultSchema = z.object({
@@ -54,8 +62,10 @@ export const ImageSoftDeleteResultSchema = z.object({
 });
 
 export type ImageStatus = z.infer<typeof ImageStatusSchema>;
+export type ImageReviewStatus = z.infer<typeof ImageReviewStatusSchema>;
 export type ImageRecord = z.infer<typeof ImageRecordSchema>;
 export type ImageLibraryItem = z.infer<typeof ImageLibraryItemSchema>;
 export type ImageSaveInput = z.infer<typeof ImageSaveInputSchema>;
+export type ImageReviewInput = z.infer<typeof ImageReviewInputSchema>;
 export type ImageSoftDeleteInput = z.infer<typeof ImageSoftDeleteInputSchema>;
 export type ImageSoftDeleteResult = z.infer<typeof ImageSoftDeleteResultSchema>;
