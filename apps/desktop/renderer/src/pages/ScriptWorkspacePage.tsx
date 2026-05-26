@@ -4,6 +4,7 @@ import type { ScriptWorkspaceColumnResult, ScriptWorkspaceModel, SkillRecord } f
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StatusStrip, StickyBatchBar, WorkbenchHeader } from "@/components/workbench";
 import { configuredLlmModelsFromApiKeys } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
@@ -251,14 +252,12 @@ export function ScriptWorkspacePage(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5" data-script-workspace>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">文案工作区</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            当前工作空间：{workspace?.name ?? "未选择"}，v1 不与任务单强制关联，仅显示已启用的视频文案类 Skill。
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <WorkbenchHeader
+        eyebrow="文案生产"
+        title="文案工作区"
+        description={`当前工作空间：${workspace?.name ?? "未选择"}。长文案按模型列阅读、复制和入库。`}
+        actions={
+          <>
           <Button variant="outline" onClick={loadSkills}>
             刷新 Skill
           </Button>
@@ -274,8 +273,18 @@ export function ScriptWorkspacePage(): JSX.Element {
             <Square />
             取消
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
+
+      <StatusStrip
+        items={[
+          { label: "启用 Skill", value: skills.length, hint: selectedSkillId || "未选择", tone: skills.length > 0 ? "success" : "warning" },
+          { label: "启用模型", value: activeModels.length, hint: `${models.length} 个已配置`, tone: activeModels.length > 0 ? "info" : "warning" },
+          { label: "文案结果", value: allScripts.length, hint: loading ? "生成中" : "当前批次", tone: allScripts.length > 0 ? "success" : "neutral" },
+          { label: "已选入库", value: selectedScripts.size, hint: "点击文案选择", tone: selectedScripts.size > 0 ? "info" : "neutral" }
+        ]}
+      />
 
       <section className="grid grid-cols-[280px_180px_minmax(0,1fr)] gap-4 rounded-lg border border-border bg-card p-4">
         <label className="flex flex-col gap-1.5 text-sm">
@@ -338,14 +347,23 @@ export function ScriptWorkspacePage(): JSX.Element {
         </Button>
       </section>
 
+      <StickyBatchBar visible={selectedScripts.size > 0}>
+        <span className="text-sm font-medium">已选 {selectedScripts.size} 条文案</span>
+        <Button variant="primary" size="sm" onClick={saveSelected}>
+          <Save />
+          写入文案库
+        </Button>
+      </StickyBatchBar>
+
       <div
         className="grid min-h-0 flex-1 gap-4"
         style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(280px, 1fr))` }}
       >
         {columns.length === 0 ? (
-          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card text-sm text-muted-foreground">
-            <ScrollText className="size-8" />
-            选择 Skill 和模型后生成口播脚本或剪映文字转语音文案
+          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 text-center text-sm text-muted-foreground">
+            <ScrollText className="size-9 text-primary/70" />
+            <div className="font-medium text-foreground">选择 Skill 和模型后生成文案</div>
+            <p className="max-w-md leading-6">这里会保留长文本结构，便于阅读、复制、筛选和入库。</p>
           </div>
         ) : (
           columns.map((column) => (

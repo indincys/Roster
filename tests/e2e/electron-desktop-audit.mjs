@@ -415,6 +415,11 @@ async function main() {
       "video library filtered no-cover rows",
       10_000
     );
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-video-detail-panel]') !== null && document.querySelector('[data-workbench-status-strip]') !== null`),
+      "video library object detail panel",
+      10_000
+    );
     const selectedVideoIdsForBatch = videos.slice(0, 2).map((video) => video.id);
     await evaluate(
       client,
@@ -1351,6 +1356,15 @@ async function main() {
       "image review stage exposes generated results",
       10_000
     );
+    await waitFor(
+      () =>
+        evaluate(
+          client,
+          `document.querySelector('[data-image-review-workbench]') !== null && document.querySelector('[data-image-preview-main]') !== null && document.querySelector('[data-image-zoom-fit]') !== null`
+        ),
+      "image review stage exposes large preview",
+      10_000
+    );
     const imageToSoftDeleteId = await evaluate(
       client,
       `document.querySelector('[data-image-review-card]')?.getAttribute('data-image-review-card')`
@@ -1731,6 +1745,11 @@ async function main() {
     await waitFor(
       () => evaluate(client, "document.querySelectorAll('[data-task-row]').length > 0"),
       "real task page loaded generated sheet",
+      10_000
+    );
+    await waitFor(
+      () => evaluate(client, `document.querySelector('[data-task-preflight]') !== null && document.querySelector('[data-workbench-status-strip]') !== null`),
+      "task page preflight and status strip",
       10_000
     );
     await evaluate(client, `document.querySelector('[data-create-task-schedule]').click()`);

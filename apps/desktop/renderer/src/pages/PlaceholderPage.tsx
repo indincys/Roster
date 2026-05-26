@@ -1,6 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { WorkbenchHeader } from "@/components/workbench";
 import type { AppPage } from "@/stores/app-store";
 
 interface PlaceholderPageProps {
@@ -10,7 +11,12 @@ interface PlaceholderPageProps {
 
 export function PlaceholderPage({ title, page }: PlaceholderPageProps): JSX.Element {
   return (
-    <div className="p-5">
+    <div className="flex flex-col gap-4 p-5">
+      <WorkbenchHeader
+        eyebrow="后续工作台"
+        title={title}
+        description="这个页面会按同一套对象工作台原则接入：先展示主对象，再给出状态、详情和下一步动作。"
+      />
       <Card>
         <CardHeader>
           <CardTitle>{title}</CardTitle>

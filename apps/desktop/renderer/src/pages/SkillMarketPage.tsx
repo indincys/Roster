@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { StatusStrip, WorkbenchHeader } from "@/components/workbench";
 
 const typeLabels: Record<SkillMarketEntry["type"], string> = {
   title: "标题",
@@ -91,12 +92,12 @@ export function SkillMarketPage(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5" data-skill-market>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-semibold">Skill 市场</h1>
-          <p className="mt-1 text-sm text-muted-foreground">从公开仓库安装官方 Skill。客户端不携带私有仓库 token。</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <WorkbenchHeader
+        eyebrow="官方 Skill"
+        title="Skill 市场"
+        description="从公开仓库安装官方 Skill。这里负责发现和安装，编辑与启用回到 Skill 中心。"
+        actions={
+          <>
           {market?.offline ? (
             <Badge variant="warning">
               <WifiOff className="size-3" />
@@ -109,8 +110,18 @@ export function SkillMarketPage(): JSX.Element {
             <RefreshCw />
             刷新
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
+
+      <StatusStrip
+        items={[
+          { label: "市场状态", value: market?.offline ? "离线" : "在线", hint: market?.manifestUrl ?? "默认 manifest", tone: market?.offline ? "warning" : "success" },
+          { label: "可显示 Skill", value: filteredSkills.length, hint: `${market?.skills.length ?? 0} 个总数`, tone: "neutral" },
+          { label: "待升级数", value: filteredSkills.filter((skill) => skill.status === "update_available").length, hint: "检测到新版后处理", tone: filteredSkills.some((skill) => skill.status === "update_available") ? "warning" : "neutral" },
+          { label: "已安装", value: filteredSkills.filter((skill) => skill.status === "installed").length, hint: "本地可用", tone: "info" }
+        ]}
+      />
 
       {message ? <div className="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground" data-skill-market-message>{message}</div> : null}
 

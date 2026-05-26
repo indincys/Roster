@@ -4,6 +4,7 @@ import { CheckCircle2, Clapperboard, ImageIcon, Keyboard, Layers, Loader2, Save 
 import type { CoverTimelineFrame, CoverTimelineResult, VideoLibraryItem } from "@roster/shared-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusStrip, WorkbenchHeader } from "@/components/workbench";
 import { cn } from "@/lib/utils";
 
 type CoverRatio = "3:4" | "9:16" | "1:1" | "custom";
@@ -565,17 +566,25 @@ export function CoverWorkspacePage(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5" data-cover-workspace>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">封面工作区</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            拖动时间轴或缩略图定帧、在视频画面内移动裁剪框，按 Enter 保存并跳到下一个视频。
-          </p>
-        </div>
+      <WorkbenchHeader
+        eyebrow="封面定帧"
+        title="封面工作区"
+        description="队列、主预览和时间轴保持在同一屏，按 Enter 保存并跳到下一个视频。"
+        actions={
         <Button variant="outline" onClick={loadVideos}>
           刷新视频
         </Button>
-      </div>
+        }
+      />
+
+      <StatusStrip
+        items={[
+          { label: "视频总数", value: videos.length, hint: "当前筛选队列", tone: "neutral" },
+          { label: "待做封面", value: pendingVideos.length, hint: "保存后自动跳转", tone: pendingVideos.length > 0 ? "warning" : "success" },
+          { label: "当前比例", value: ratio, hint: ratio === "custom" ? `${customWidth}:${customHeight}` : "裁剪遮罩", tone: "info" },
+          { label: "时间轴", value: timeline?.frames.length ?? 0, hint: "可选缩略帧", tone: timeline ? "success" : "neutral" }
+        ]}
+      />
 
       <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)] gap-4">
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
@@ -600,6 +609,13 @@ export function CoverWorkspacePage(): JSX.Element {
                 type="button"
                 data-cover-video-row={video.id}
               >
+                {video.thumbnailUrl ? (
+                  <img alt="" className="h-10 w-[58px] shrink-0 rounded border border-border object-cover" src={video.thumbnailUrl} />
+                ) : (
+                  <span className="flex h-10 w-[58px] shrink-0 items-center justify-center rounded border border-dashed border-border bg-muted text-[10px] text-muted-foreground">
+                    无预览
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 truncate">{video.fileName}</span>
                 {video.hasCover ? <CheckCircle2 className="size-4 text-emerald-600" /> : null}
               </button>

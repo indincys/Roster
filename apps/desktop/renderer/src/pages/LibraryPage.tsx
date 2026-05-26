@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Check, Clipboard, Download, FileText, Image, Plus, Search, Tags, Type, Upload, WandSparkles } from "lucide-react";
+import { Check, Clipboard, Download, FileText, Image, Plus, Tags, Type, Upload, WandSparkles } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 import type {
   ImageLibraryItem,
@@ -17,8 +17,10 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StatusStrip, WorkbenchHeader } from "@/components/workbench";
 import { cn } from "@/lib/utils";
 import type { AppPage } from "@/stores/app-store";
+import { imageCacheUrl } from "./image-studio/studio-data";
 
 type LibraryPageId = "lib_tags" | "lib_titles" | "lib_scripts" | "lib_prompts" | "lib_images";
 
@@ -324,7 +326,7 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
             ? filteredTitles.length
             : filteredTags.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 36,
+    estimateSize: () => (isImagesPage ? 64 : 36),
     initialRect: { width: 960, height: 360 },
     overscan: 12
   });
@@ -700,12 +702,12 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
 
   return (
     <div className="flex min-h-full flex-col gap-4 p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">{config.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{config.description}</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <WorkbenchHeader
+        eyebrow="资产库"
+        title={config.title}
+        description={`${config.description} 资产库负责管理对象，工作区负责生产、验收和返工。`}
+        actions={
+          <>
           {isScriptsPage ? (
             <>
               <Button variant="outline" onClick={copyScriptsToClipboard} disabled={loading} data-copy-selected-scripts>
@@ -748,24 +750,38 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
             <Plus />
             {config.primaryAction}
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-4 gap-3">
-        <Metric
-          label="总数"
-          value={String(isImagesPage ? images.length : isScriptsPage ? scripts.length : isPromptsPage ? prompts.length : isTitlesPage ? titles.length : totalCount)}
-        />
-        <Metric
-          label={isTagsPage ? "默认标签" : isTitlesPage ? "可用标题" : isPromptsPage ? "可用提示词" : isScriptsPage ? "可用文案" : isImagesPage ? "可用图片" : "本周新增"}
-          value={String(activeCount)}
-        />
-        <Metric
-          label={isTagsPage ? "测试标签" : isTitlesPage ? "已归档" : isPromptsPage ? "非可用" : isScriptsPage ? "已归档" : isImagesPage ? "非可用" : "已使用"}
-          value={String(testCount)}
-        />
-        <Metric label="待处理" value="0" />
-      </div>
+      <StatusStrip
+        items={[
+          {
+            label: "总数",
+            value: isImagesPage ? images.length : isScriptsPage ? scripts.length : isPromptsPage ? prompts.length : isTitlesPage ? titles.length : totalCount,
+            hint: `${displayedCount} 条当前可见`,
+            tone: "neutral"
+          },
+          {
+            label: isTagsPage ? "默认标签" : isTitlesPage ? "可用标题" : isPromptsPage ? "可用提示词" : isScriptsPage ? "可用文案" : isImagesPage ? "可用图片" : "可用资产",
+            value: activeCount,
+            hint: "可送回工作区",
+            tone: activeCount > 0 ? "success" : "neutral"
+          },
+          {
+            label: isTagsPage ? "测试标签" : isTitlesPage ? "已归档" : isPromptsPage ? "非可用" : isScriptsPage ? "已归档" : isImagesPage ? "非可用" : "低频资产",
+            value: testCount,
+            hint: "需要时再处理",
+            tone: testCount > 0 ? "warning" : "neutral"
+          },
+          {
+            label: "当前对象",
+            value: selectedTagId || selectedTitleId || selectedPromptId || selectedScriptId || selectedImageId ? 1 : 0,
+            hint: "右侧详情面板",
+            tone: selectedTagId || selectedTitleId || selectedPromptId || selectedScriptId || selectedImageId ? "info" : "neutral"
+          }
+        ]}
+      />
 
       <div className={isTagsPage || isTitlesPage || isPromptsPage || isScriptsPage || isImagesPage ? "grid min-h-0 grid-cols-[minmax(0,1fr)_320px] gap-4" : undefined}>
       <section className="min-w-0 rounded-lg border border-border bg-card">
@@ -805,7 +821,11 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
 
         <div
           className="grid h-9 items-center border-b border-border bg-muted/50 px-4 text-xs font-medium text-muted-foreground"
-          style={{ gridTemplateColumns: `repeat(${config.columns.length}, minmax(120px, 1fr))` }}
+          style={{
+            gridTemplateColumns: isImagesPage
+              ? "104px minmax(160px,1.2fr) 100px 140px 88px 96px 140px"
+              : `repeat(${config.columns.length}, minmax(120px, 1fr))`
+          }}
         >
           {config.columns.map((column) => (
             <div key={column} className="truncate">
@@ -965,13 +985,11 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
                   <div
                     key={image.id}
                     data-image-row
-                    className="absolute left-0 grid w-full cursor-default grid-cols-[72px_minmax(160px,1.2fr)_100px_140px_88px_96px_140px] items-center border-b border-border/70 px-4 text-sm hover:bg-muted/50"
+                    className="absolute left-0 grid w-full cursor-default grid-cols-[104px_minmax(160px,1.2fr)_100px_140px_88px_96px_140px] items-center border-b border-border/70 px-4 text-sm hover:bg-muted/50"
                     style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}
                     onClick={() => openImage(image)}
                   >
-                    <div className="flex size-8 items-center justify-center rounded-md border border-border bg-muted text-[10px] text-muted-foreground">
-                      IMG
-                    </div>
+                    <img alt={image.fileName} className="h-14 w-24 rounded-md border border-border bg-muted object-cover" src={imageCacheUrl(image.relativePath)} />
                     <div>
                       <div className="truncate font-medium">{image.fileName}</div>
                       <div className="truncate text-xs text-muted-foreground">{image.currentAbsolutePath}</div>
@@ -1352,16 +1370,4 @@ export function LibraryPage({ page }: { page: LibraryPageId }): JSX.Element {
 
 function TagCell({ value }: { value: string | null }): JSX.Element {
   return <div className="truncate text-muted-foreground">{value ?? "-"}</div>;
-}
-
-function Metric({ label, value }: { label: string; value: string }): JSX.Element {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <Search className="size-4 text-primary" />
-      </div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-    </div>
-  );
 }

@@ -4,6 +4,7 @@ import type { SkillRecord, TitleWorkspaceColumnResult, TitleWorkspaceModel } fro
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StatusStrip, StickyBatchBar, WorkbenchHeader } from "@/components/workbench";
 import { configuredLlmModelsFromApiKeys } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
@@ -247,14 +248,12 @@ export function TitleWorkspacePage(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5" data-title-workspace>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">标题工作区</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            当前工作空间：{workspace?.name ?? "未选择"}，仅显示已启用的标题类 Skill。
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <WorkbenchHeader
+        eyebrow="标题生产"
+        title="标题工作区"
+        description={`当前工作空间：${workspace?.name ?? "未选择"}。按模型列比较结果，选中后批量入库。`}
+        actions={
+          <>
           <Button variant="outline" onClick={loadSkills}>
             刷新 Skill
           </Button>
@@ -270,8 +269,18 @@ export function TitleWorkspacePage(): JSX.Element {
             <Square />
             取消
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
+
+      <StatusStrip
+        items={[
+          { label: "启用 Skill", value: skills.length, hint: selectedSkillId || "未选择", tone: skills.length > 0 ? "success" : "warning" },
+          { label: "启用模型", value: activeModels.length, hint: `${models.length} 个已配置`, tone: activeModels.length > 0 ? "info" : "warning" },
+          { label: "结果标题", value: allTitles.length, hint: loading ? "生成中" : "当前批次", tone: allTitles.length > 0 ? "success" : "neutral" },
+          { label: "已选入库", value: selectedTitles.size, hint: "点击标题选择", tone: selectedTitles.size > 0 ? "info" : "neutral" }
+        ]}
+      />
 
       <section className="grid grid-cols-[280px_minmax(0,1fr)_220px] gap-4 rounded-lg border border-border bg-card p-4">
         <label className="flex flex-col gap-1.5 text-sm">
@@ -334,10 +343,20 @@ export function TitleWorkspacePage(): JSX.Element {
         </Button>
       </section>
 
+      <StickyBatchBar visible={selectedTitles.size > 0}>
+        <span className="text-sm font-medium">已选 {selectedTitles.size} 条标题</span>
+        <Button variant="primary" size="sm" onClick={saveSelected}>
+          <Save />
+          写入标题库
+        </Button>
+      </StickyBatchBar>
+
       <div className="grid min-h-0 flex-1 gap-4" style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(260px, 1fr))` }}>
         {columns.length === 0 ? (
-          <div className="flex min-h-80 items-center justify-center rounded-lg border border-dashed border-border bg-card text-sm text-muted-foreground">
-            选择 Skill 和模型后生成标题
+          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 text-center text-sm text-muted-foreground">
+            <Sparkles className="size-9 text-primary/70" />
+            <div className="font-medium text-foreground">选择 Skill 和模型后生成标题</div>
+            <p className="max-w-md leading-6">这里会按模型分列展示结果，方便比较、重试和批量入库。</p>
           </div>
         ) : (
           columns.map((column) => (

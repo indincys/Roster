@@ -1,17 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   CalendarClock,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Folder,
   Image as ImageIcon,
   Info,
   LayoutGrid,
   Library,
+  Maximize2,
+  Minus,
   Settings,
   Sparkles,
   Upload,
   X,
+  ZoomIn,
   Zap
 } from "lucide-react";
 import {
@@ -37,6 +42,7 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import { useImageGenerationTaskStore, type ImageGenerationTask } from "@/stores/image-generation-task-store";
 import { imageOptionKey, imageOptionToTarget, Photo, ProviderGrid, Tile } from "./image-studio/components";
+import { imageCacheUrl } from "./image-studio/studio-data";
 
 const ASPECT_RATIOS: ImageSceneAspectRatio[] = ["1:1", "3:4", "9:16", "16:9"];
 const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10];
@@ -683,52 +689,135 @@ function ReviewView({
 }: {
   items: ReviewImage[];
   busy: boolean;
-  onApprove: (image: ImageLibraryItem) => void;
-  onReject: (image: ImageLibraryItem) => void;
+  onApprove: (image: ImageLibraryItem) => Promise<void>;
+  onReject: (image: ImageLibraryItem) => Promise<string | void>;
   onApproveAll: () => void;
   onBack: () => void;
 }): JSX.Element {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<"fit" | number>("fit");
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const pending = items.filter((item) => item.image.status === "active" && item.image.reviewStatus === "pending").length;
   const approved = items.filter((item) => item.image.status === "active" && item.image.reviewStatus === "approved").length;
   const rejected = items.filter((item) => item.image.status === "soft_deleted").length;
+  const selected =
+    items.find((item) => item.image.id === selectedId) ??
+    items.find((item) => item.image.status === "active" && item.image.reviewStatus === "pending") ??
+    items[0] ??
+    null;
+  const selectedIndex = selected ? items.findIndex((item) => item.image.id === selected.image.id) : -1;
+  const selectedVerdict =
+    selected?.image.status === "soft_deleted" ? "已拒绝" : selected?.image.reviewStatus === "approved" ? "已通过" : "待审";
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    if (!selectedId || !items.some((item) => item.image.id === selectedId)) {
+      const firstPending = items.find((item) => item.image.status === "active" && item.image.reviewStatus === "pending") ?? items[0];
+      setSelectedId(firstPending.image.id);
+    }
+  }, [items, selectedId]);
+
+  const selectByOffset = (offset: number): void => {
+    if (items.length === 0) {
+      return;
+    }
+    const current = selectedIndex >= 0 ? selectedIndex : 0;
+    const nextIndex = Math.max(0, Math.min(items.length - 1, current + offset));
+    setSelectedId(items[nextIndex]?.image.id ?? null);
+    setZoom("fit");
+  };
+
+  const selectNextPending = (): void => {
+    if (!selected) {
+      return;
+    }
+    const current = selectedIndex >= 0 ? selectedIndex : 0;
+    const ordered = [...items.slice(current + 1), ...items.slice(0, current)];
+    const nextPending = ordered.find((item) => item.image.status === "active" && item.image.reviewStatus === "pending");
+    if (nextPending) {
+      setSelectedId(nextPending.image.id);
+      setZoom("fit");
+    }
+  };
+
+  const approveSelected = async (): Promise<void> => {
+    if (!selected || busy || selected.image.status !== "active" || selected.image.reviewStatus === "approved") {
+      return;
+    }
+    await onApprove(selected.image);
+    setFeedback("已通过，继续检查下一张");
+    selectNextPending();
+  };
+
+  const rejectSelected = async (): Promise<void> => {
+    if (!selected || busy || selected.image.status === "soft_deleted") {
+      return;
+    }
+    const trashPath = await onReject(selected.image);
+    setFeedback(`已拒绝并移动到 ${trashPath ?? "_trash/images"}`);
+    selectNextPending();
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target;
+      if (target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        selectByOffset(-1);
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        selectByOffset(1);
+      }
+      if (event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        void approveSelected();
+      }
+      if (event.key.toLowerCase() === "x") {
+        event.preventDefault();
+        void rejectSelected();
+      }
+      if (event.code === "Space") {
+        event.preventDefault();
+        setZoom("fit");
+        viewportRef.current?.scrollTo({ left: 0, top: 0 });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
+  const setNumericZoom = (next: number): void => {
+    setZoom(Math.max(25, Math.min(400, next)));
+  };
+
   return (
-    <div className="stage">
-      <div className="stage-head">
-        <div className="stage-title-block">
+    <div className="stage review-workbench" data-image-review-workbench>
+      <div className="review-toolbar">
+        <div>
           <div className="eyebrow">
             <span className="line" />
-            验收阶段
+            验收工作台
           </div>
           <h2>审核生成结果</h2>
-          <div className="desc">待审图片通过后才会进入图片库；拒绝会软删除并移动到 _trash/images。</div>
+          <div className="desc">图片是主对象。放大看细节后，通过入库，拒绝会软删除并移动到 _trash/images。</div>
         </div>
-        <button type="button" className="btn primary" disabled={pending === 0 || busy} onClick={onApproveAll}>
-          <Check size={13} />
-          一键通过待审（{pending}）
-        </button>
-      </div>
-      <div className="stat-grid">
-        <div className="card stat-card">
-          <div className="label">总图数</div>
-          <div className="stat-v">{items.length}</div>
-        </div>
-        <div className="card stat-card">
-          <div className="label">待审</div>
-          <div className="stat-v" style={{ color: "var(--warn)" }}>
-            {pending}
-          </div>
-        </div>
-        <div className="card stat-card">
-          <div className="label">已通过</div>
-          <div className="stat-v" style={{ color: "var(--success)" }}>
-            {approved}
-          </div>
-        </div>
-        <div className="card stat-card">
-          <div className="label">已拒绝</div>
-          <div className="stat-v" style={{ color: "var(--danger)" }}>
-            {rejected}
-          </div>
+        <div className="review-toolbar-actions">
+          <span className="review-metric">总数 <b>{items.length}</b></span>
+          <span className="review-metric warn">待审 <b>{pending}</b></span>
+          <span className="review-metric ok">通过 <b>{approved}</b></span>
+          <span className="review-metric danger">拒绝 <b>{rejected}</b></span>
+          <button type="button" className="btn primary" disabled={pending === 0 || busy} onClick={onApproveAll}>
+            <Check size={13} />
+            一键通过待审（{pending}）
+          </button>
         </div>
       </div>
       {items.length === 0 ? (
@@ -739,25 +828,49 @@ function ReviewView({
           <div>本次还没有生成结果</div>
         </div>
       ) : (
-        <div className="grid size-md">
-          {items.map(({ image, prompt }) => (
-            <div key={image.id} className="tile" data-image-review-card={image.id}>
-              <Tile
-                image={image}
-                paletteKey={image.id}
-                ratio={image.aspectRatio}
-                verdict={image.status === "soft_deleted" ? "rejected" : image.reviewStatus === "approved" ? "approved" : "pending"}
-              />
-              <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                <div className="serif small" style={{ color: "var(--ink-2)", lineHeight: 1.5 }}>
-                  {prompt?.text ?? "未关联提示词"}
-                </div>
-                <div className="row" style={{ gap: 6 }}>
+        <div className="review-shell">
+          <aside className="review-queue" aria-label="待审图片队列">
+            {items.map(({ image, prompt }, index) => (
+              <div
+                key={image.id}
+                role="button"
+                tabIndex={0}
+                className={cn("review-queue-item", selected?.image.id === image.id && "active")}
+                onClick={() => {
+                  setSelectedId(image.id);
+                  setZoom("fit");
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    setSelectedId(image.id);
+                    setZoom("fit");
+                  }
+                }}
+                data-image-review-card={image.id}
+              >
+                <Photo image={image} paletteKey={image.id} className="review-thumb" />
+                <span className="review-queue-copy">
+                  <span className="review-queue-title">
+                    #{index + 1} · {image.aspectRatio ?? "未知比例"}
+                  </span>
+                  <span className="review-queue-prompt">{prompt?.text ?? "未关联提示词"}</span>
+                </span>
+                <span
+                  className={cn(
+                    "review-status-dot",
+                    image.status === "soft_deleted" ? "danger" : image.reviewStatus === "approved" ? "ok" : "warn"
+                  )}
+                />
+                <span className="review-queue-actions">
                   <button
                     type="button"
                     className="btn xs success"
                     disabled={busy || image.status !== "active" || image.reviewStatus === "approved"}
-                    onClick={() => onApprove(image)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedId(image.id);
+                      void onApprove(image).then(() => setFeedback("已通过"));
+                    }}
                     data-approve-image={image.id}
                   >
                     <Check size={11} />
@@ -767,21 +880,117 @@ function ReviewView({
                     type="button"
                     className="btn xs danger"
                     disabled={busy || image.status === "soft_deleted"}
-                    onClick={() => onReject(image)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedId(image.id);
+                      void onReject(image).then((trashPath) => setFeedback(`已拒绝并移动到 ${trashPath ?? "_trash/images"}`));
+                    }}
                     data-reject-image={image.id}
                   >
                     <X size={11} />
                     拒绝
                   </button>
-                </div>
+                </span>
+              </div>
+            ))}
+          </aside>
+          <main className="review-main">
+            <div className="review-viewer-head">
+              <button type="button" className="btn xs ghost" onClick={() => selectByOffset(-1)} disabled={selectedIndex <= 0}>
+                <ChevronLeft size={13} />
+                上一张
+              </button>
+              <div className="review-counter">
+                {selectedIndex + 1}/{items.length} · {selectedVerdict}
+              </div>
+              <button type="button" className="btn xs ghost" onClick={() => selectByOffset(1)} disabled={selectedIndex >= items.length - 1}>
+                下一张
+                <ChevronRight size={13} />
+              </button>
+              <div className="review-zoom">
+                <button type="button" className="btn xs ghost" onClick={() => (zoom === "fit" ? setNumericZoom(75) : setNumericZoom(zoom - 25))}>
+                  <Minus size={12} />
+                </button>
+                <button type="button" className={cn("btn xs", zoom === "fit" ? "primary" : "ghost")} onClick={() => setZoom("fit")} data-image-zoom-fit>
+                  <Maximize2 size={12} />
+                  Fit
+                </button>
+                <button type="button" className={cn("btn xs", zoom === 100 ? "primary" : "ghost")} onClick={() => setZoom(100)}>
+                  100%
+                </button>
+                <button type="button" className="btn xs ghost" onClick={() => (zoom === "fit" ? setNumericZoom(125) : setNumericZoom(zoom + 25))}>
+                  <ZoomIn size={12} />
+                </button>
               </div>
             </div>
-          ))}
+            <div className="review-preview" ref={viewportRef} data-image-preview-main>
+              {selected ? (
+                <img
+                  src={imageCacheUrl(selected.image.relativePath)}
+                  alt={selected.prompt?.text ?? selected.image.fileName}
+                  style={zoom === "fit" ? undefined : { width: `${zoom}%`, maxWidth: "none" }}
+                />
+              ) : null}
+            </div>
+            <div className="review-shortcuts">
+              <span className="kbd">← / →</span> 切换
+              <span className="kbd">A</span> 通过
+              <span className="kbd">X</span> 拒绝
+              <span className="kbd">Space</span> 适配窗口
+              {feedback ? <b>{feedback}</b> : null}
+            </div>
+          </main>
+          <aside className="review-inspector">
+            <div>
+              <div className="label">来源提示词</div>
+              <div className="serif review-prompt">{selected?.prompt?.text ?? "未关联提示词"}</div>
+            </div>
+            <div className="review-facts">
+              <Fact label="比例" value={selected?.image.aspectRatio ?? "-"} />
+              <Fact label="尺寸" value={selected?.image.width && selected.image.height ? `${selected.image.width}×${selected.image.height}` : "-"} />
+              <Fact label="模型" value={selected?.image.sourceModel ?? "-"} />
+              <Fact label="状态" value={selectedVerdict} />
+              <Fact label="文件" value={selected?.image.relativePath ?? "-"} />
+            </div>
+            <div className="review-actions">
+              <button
+                type="button"
+                className="btn success"
+                disabled={!selected || busy || selected.image.status !== "active" || selected.image.reviewStatus === "approved"}
+                onClick={() => void approveSelected()}
+                data-approve-image={selected?.image.id}
+                data-image-approve-current
+              >
+                <Check size={13} />
+                通过
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                disabled={!selected || busy || selected.image.status === "soft_deleted"}
+                onClick={() => void rejectSelected()}
+                data-reject-image={selected?.image.id}
+                data-image-reject-current
+              >
+                <X size={13} />
+                拒绝
+              </button>
+            </div>
+          </aside>
         </div>
       )}
       <button type="button" className="btn ghost" onClick={onBack}>
         返回生成结果
       </button>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="review-fact">
+      <span>{label}</span>
+      <b title={value}>{value}</b>
     </div>
   );
 }
@@ -1188,11 +1397,12 @@ export function ImageStudioPage(): JSX.Element {
     }
   };
 
-  const rejectImage = async (image: ImageLibraryItem): Promise<void> => {
+  const rejectImage = async (image: ImageLibraryItem): Promise<string> => {
     setBusy(true);
     try {
-      await window.roster.softDeleteImage({ imageId: image.id });
+      const result = await window.roster.softDeleteImage({ imageId: image.id });
       await loadData();
+      return result.trashRelativePath;
     } finally {
       setBusy(false);
     }
@@ -1416,8 +1626,8 @@ export function ImageStudioPage(): JSX.Element {
           <ReviewView
             items={reviewItems}
             busy={busy}
-            onApprove={(image) => void approveImage(image)}
-            onReject={(image) => void rejectImage(image)}
+            onApprove={approveImage}
+            onReject={rejectImage}
             onApproveAll={() => void approveAllPending()}
             onBack={() => setView("generating")}
           />

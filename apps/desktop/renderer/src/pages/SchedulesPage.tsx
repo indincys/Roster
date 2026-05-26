@@ -3,6 +3,7 @@ import { CalendarClock, Clock3, Pause, Play, Plus, StepForward } from "lucide-re
 import type { ScheduledJobRecord, ScheduledJobRunRecord, ScheduledJobRunStatus, ScheduledJobType } from "@roster/shared-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusStrip, WorkbenchHeader } from "@/components/workbench";
 import { activeWorkspace, useAppStore, type AppPage } from "@/stores/app-store";
 
 const typeLabels: Record<ScheduledJobType, string> = {
@@ -120,12 +121,12 @@ export function SchedulesPage(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5" data-schedules-page>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">定时任务总览</h1>
-          <p className="mt-1 text-sm text-muted-foreground">主进程运行期间执行；软件关闭后 v1 不执行后台定时任务。</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <WorkbenchHeader
+        eyebrow="自动化队列"
+        title="定时任务总览"
+        description="查看哪些任务会运行、下一次何时运行，以及失败原因。主进程运行期间执行。"
+        actions={
+          <>
           <Button
             variant="outline"
             onClick={runDueJobs}
@@ -140,14 +141,18 @@ export function SchedulesPage(): JSX.Element {
           <Button variant="outline" onClick={loadJobs}>
             刷新
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-3 gap-3">
-        <Metric label="当前启用" value={stats.enabled} />
-        <Metric label="暂停中" value={stats.paused} />
-        <Metric label="最近失败" value={stats.failed} />
-      </div>
+      <StatusStrip
+        items={[
+          { label: "当前启用", value: stats.enabled, hint: `${jobs.length} 个定时任务`, tone: stats.enabled > 0 ? "success" : "neutral" },
+          { label: "暂停中", value: stats.paused, hint: "不会自动运行", tone: stats.paused > 0 ? "warning" : "neutral" },
+          { label: "最近失败", value: stats.failed, hint: "查看历史定位原因", tone: stats.failed > 0 ? "danger" : "neutral" },
+          { label: "当前对象", value: selectedJob ? 1 : 0, hint: selectedJob?.name ?? "未选择", tone: selectedJob ? "info" : "neutral" }
+        ]}
+      />
 
       <section className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-card">
         <div className="grid h-10 grid-cols-[76px_minmax(170px,1fr)_94px_118px_96px_145px_90px_230px] items-center border-b border-border bg-muted/50 px-4 text-xs font-medium text-muted-foreground">
@@ -266,15 +271,6 @@ export function SchedulesPage(): JSX.Element {
       ) : null}
 
       {message ? <div className="rounded-md border border-border bg-card px-4 py-3 text-sm" data-schedule-message>{message}</div> : null}
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: number }): JSX.Element {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
     </div>
   );
 }

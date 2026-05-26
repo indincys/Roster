@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertTriangle, Archive, Clapperboard, Database, ImageIcon, RefreshCw, SquarePen, Trash2 } from "lucide-react";
+import { Clapperboard, Database, ImageIcon, RefreshCw, SquarePen, Trash2 } from "lucide-react";
 import type { VideoLibraryItem, VideoScanSummary, VideoStatus } from "@roster/shared-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InspectorPanel, MediaPreviewFrame, StatusStrip, StickyBatchBar, WorkbenchHeader } from "@/components/workbench";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
 
@@ -158,7 +159,8 @@ export function VideoLibraryPage(): JSX.Element {
       all: videos.length,
       active: videos.filter((video) => video.status === "active").length,
       archived: videos.filter((video) => video.status === "archived").length,
-      warning: videos.filter((video) => video.status === "metadata_error" || video.status === "placeholder").length
+      warning: videos.filter((video) => video.status === "metadata_error" || video.status === "placeholder").length,
+      missingCover: videos.filter((video) => !video.hasCover && video.status !== "archived").length
     }),
     [videos]
   );
@@ -166,7 +168,7 @@ export function VideoLibraryPage(): JSX.Element {
   const rowVirtualizer = useVirtualizer({
     count: filteredVideos.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 36,
+    estimateSize: () => 64,
     initialRect: { width: 960, height: 360 },
     overscan: 16
   });
@@ -196,12 +198,22 @@ export function VideoLibraryPage(): JSX.Element {
     }
   };
 
-  const openVideoDetail = (video: VideoLibraryItem): void => {
+  const openVideoDetail = useCallback((video: VideoLibraryItem): void => {
     setSelectedVideoId(video.id);
     setEditSku(video.sku ?? "");
     setEditStyle(video.style ?? "");
     setEditNote(video.note ?? "");
-  };
+  }, []);
+
+  useEffect(() => {
+    if (filteredVideos.length === 0) {
+      setSelectedVideoId(null);
+      return;
+    }
+    if (!selectedVideoId || !filteredVideos.some((video) => video.id === selectedVideoId)) {
+      openVideoDetail(filteredVideos[0]);
+    }
+  }, [filteredVideos, openVideoDetail, selectedVideoId]);
 
   const onSaveVideo = async (): Promise<void> => {
     if (!selectedVideo) {
@@ -302,29 +314,32 @@ export function VideoLibraryPage(): JSX.Element {
 
   return (
     <div className="flex min-h-full flex-col gap-4 p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">视频库</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            索引视频库根目录下按 SKU 组织的视频文件，不复制原文件；数据库仅保存相对路径。
-          </p>
-          <p className="mt-1 font-mono text-xs text-muted-foreground" data-video-library-root-display>
-            当前根目录：{videoLibraryDisplayPath}
+      <WorkbenchHeader
+        eyebrow="素材工作台"
+        title="视频库"
+        description="先判断素材是否可用，再补全 SKU、封面和备注。数据库只保存相对路径，不复制原文件。"
+        meta={
+          <span className="font-mono" data-video-library-root-display>
+            {videoLibraryDisplayPath}
             {workspace.videoLibraryRootPath ? "（自定义）" : "（工作空间默认）"}
-          </p>
-        </div>
+          </span>
+        }
+        actions={
         <Button variant="primary" onClick={onScan} disabled={loading}>
           <RefreshCw className={cn(loading && "animate-spin")} />
           重新扫描
         </Button>
-      </div>
+        }
+      />
 
-      <div className="grid grid-cols-4 gap-3">
-        <Metric label="视频总数" value={totals.all} icon={Clapperboard} />
-        <Metric label="可用素材" value={totals.active} icon={Database} />
-        <Metric label="已归档" value={totals.archived} icon={Archive} />
-        <Metric label="待处理" value={totals.warning} icon={AlertTriangle} />
-      </div>
+      <StatusStrip
+        items={[
+          { label: "视频总数", value: totals.all, hint: `${filteredVideos.length} 条当前可见`, tone: "neutral" },
+          { label: "可用素材", value: totals.active, hint: "可进入任务单和封面", tone: "success" },
+          { label: "缺封面", value: totals.missingCover, hint: "建议进入封面工作区", tone: totals.missingCover > 0 ? "warning" : "neutral", onClick: goToCoverWorkspace },
+          { label: "异常素材", value: totals.warning, hint: "元数据或同步问题", tone: totals.warning > 0 ? "danger" : "neutral" }
+        ]}
+      />
 
       <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_320px] gap-4">
       <div className="min-w-0 rounded-lg border border-border bg-card">
@@ -379,8 +394,11 @@ export function VideoLibraryPage(): JSX.Element {
               <option value="used_asc">低使用优先</option>
             </SelectControl>
           </div>
-          {selectedVideoIds.size > 0 ? (
-            <div className="grid grid-cols-[auto_140px_140px_auto_auto_auto] items-end gap-2 rounded-md border border-border bg-background p-2" data-video-batch-bar>
+          <StickyBatchBar
+            visible={selectedVideoIds.size > 0}
+            className="grid grid-cols-[auto_140px_140px_auto_auto_auto] items-end gap-2 border-b-0 bg-background p-2"
+            data-video-batch-bar
+          >
               <div className="pb-2 text-sm font-medium">已选 {selectedVideoIds.size}</div>
               <Input label="批量 SKU" value={batchSku} onChange={(event) => setBatchSku(event.target.value)} data-video-batch-sku />
               <Input label="批量款式" value={batchStyle} onChange={(event) => setBatchStyle(event.target.value)} data-video-batch-style />
@@ -396,13 +414,12 @@ export function VideoLibraryPage(): JSX.Element {
                 <Trash2 />
                 标记删除
               </Button>
-            </div>
-          ) : null}
+          </StickyBatchBar>
         </div>
 
         {error ? <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div> : null}
 
-          <div className="grid h-9 grid-cols-[36px_72px_minmax(180px,1.2fr)_112px_112px_104px_76px_88px_76px_minmax(240px,1.8fr)] items-center border-b border-border bg-muted/50 px-4 text-xs font-medium text-muted-foreground">
+          <div className="grid h-10 grid-cols-[36px_112px_minmax(180px,1.2fr)_112px_112px_104px_76px_88px_76px_minmax(220px,1.4fr)] items-center border-b border-border bg-muted/50 px-4 text-xs font-medium text-muted-foreground">
           <div>选择</div>
           <div>缩略图</div>
           <div>文件名</div>
@@ -428,7 +445,7 @@ export function VideoLibraryPage(): JSX.Element {
             </Button>
           </div>
         ) : (
-          <div ref={parentRef} className="h-[calc(100vh-326px)] min-h-80 overflow-auto">
+          <div ref={parentRef} className="h-[calc(100vh-366px)] min-h-80 overflow-auto">
             <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
               {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                 const video = filteredVideos[virtualRow.index];
@@ -440,7 +457,7 @@ export function VideoLibraryPage(): JSX.Element {
                     key={video.id}
                     data-video-row
                     className={cn(
-                      "absolute left-0 grid w-full cursor-default grid-cols-[36px_72px_minmax(180px,1.2fr)_112px_112px_104px_76px_88px_76px_minmax(240px,1.8fr)] items-center border-b border-border/70 px-4 text-sm hover:bg-muted/50",
+                      "absolute left-0 grid w-full cursor-default grid-cols-[36px_112px_minmax(180px,1.2fr)_112px_112px_104px_76px_88px_76px_minmax(220px,1.4fr)] items-center border-b border-border/70 px-4 text-sm hover:bg-muted/50",
                       selectedVideoId === video.id && "bg-primary/5"
                     )}
                     style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}
@@ -481,12 +498,22 @@ export function VideoLibraryPage(): JSX.Element {
         )}
       </div>
 
-      <aside className="min-h-0 rounded-lg border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold">视频详情</h2>
-        </div>
+      <InspectorPanel
+        title={selectedVideo ? "当前视频" : "视频详情"}
+        description={selectedVideo ? statusDiagnosis(selectedVideo) : "选择一条视频后直接编辑元数据和处理封面。"}
+        data-video-detail-panel
+      >
         {selectedVideo ? (
           <div className="flex flex-col gap-3 p-4">
+            <MediaPreviewFrame className="aspect-video w-full">
+              {selectedVideo.thumbnailUrl ? (
+                <img alt={selectedVideo.fileName} className="h-full w-full object-cover" src={selectedVideo.thumbnailUrl} />
+              ) : selectedVideo.previewUrl ? (
+                <video className="h-full w-full object-cover" muted playsInline preload="metadata" src={selectedVideo.previewUrl} />
+              ) : (
+                <div className="text-xs text-muted-foreground">暂无预览</div>
+              )}
+            </MediaPreviewFrame>
             <div>
               <div className="truncate text-sm font-medium">{selectedVideo.fileName}</div>
               <div className="mt-1 truncate font-mono text-xs text-muted-foreground" title={selectedVideo.relativePath}>
@@ -495,6 +522,12 @@ export function VideoLibraryPage(): JSX.Element {
               <div className="mt-1 truncate font-mono text-xs text-muted-foreground" title={selectedVideo.currentAbsolutePath}>
                 {selectedVideo.currentAbsolutePath}
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <DetailFact label="状态" value={statusLabel[selectedVideo.status]} />
+              <DetailFact label="封面" value={selectedVideo.hasCover ? "已有" : "缺失"} />
+              <DetailFact label="时长" value={formatDuration(selectedVideo.durationSeconds)} />
+              <DetailFact label="大小" value={formatBytes(selectedVideo.sizeBytes)} />
             </div>
             <Input label="SKU" value={editSku} onChange={(event) => setEditSku(event.target.value)} />
             <Input label="款式" value={editStyle} onChange={(event) => setEditStyle(event.target.value)} />
@@ -507,8 +540,9 @@ export function VideoLibraryPage(): JSX.Element {
               />
             </label>
             <div className="grid grid-cols-2 gap-2 pt-1">
-              <Button variant="outline" onClick={() => setSelectedVideoId(null)}>
-                取消
+              <Button variant="outline" onClick={goToCoverWorkspace} data-video-go-covers>
+                <ImageIcon />
+                做封面
               </Button>
               <Button variant="primary" onClick={onSaveVideo} disabled={loading}>
                 保存
@@ -522,8 +556,30 @@ export function VideoLibraryPage(): JSX.Element {
             <p className="text-sm leading-6 text-muted-foreground">可编辑 SKU、款式和备注。重新扫描不会覆盖这些手动字段。</p>
           </div>
         )}
-      </aside>
+      </InspectorPanel>
       </div>
+    </div>
+  );
+}
+
+function statusDiagnosis(video: VideoLibraryItem): string {
+  if (video.status === "metadata_error") {
+    return "元数据读取失败，优先检查 ffmpeg、文件权限或编码格式。";
+  }
+  if (video.status === "placeholder") {
+    return "文件未同步到当前设备，确认云盘或外部盘路径。";
+  }
+  if (!video.hasCover) {
+    return "素材可用，但缺少封面，建议进入封面工作区。";
+  }
+  return "素材可用，可以进入任务单或继续补充元数据。";
+}
+
+function DetailFact({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="rounded-md border border-border bg-background p-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate font-mono text-xs">{value}</div>
     </div>
   );
 }
@@ -565,7 +621,7 @@ function ThumbnailCell({
   if (!src) {
     return (
       <div
-        className="flex h-7 w-11 items-center justify-center rounded border border-dashed border-border bg-muted text-[10px] text-muted-foreground"
+        className="flex h-[54px] w-24 items-center justify-center rounded border border-dashed border-border bg-muted text-[10px] text-muted-foreground"
         onMouseEnter={previewUrl ? onPreviewStart : undefined}
         onMouseLeave={previewUrl ? onPreviewEnd : undefined}
       >
@@ -575,12 +631,12 @@ function ThumbnailCell({
   }
 
   return (
-    <div className="relative h-7 w-11" onMouseEnter={previewUrl ? onPreviewStart : undefined} onMouseLeave={previewUrl ? onPreviewEnd : undefined}>
-      <img alt="" className={cn("h-7 w-11 rounded border border-border object-cover", isPreviewing && previewUrl && "invisible")} src={src} />
+    <div className="relative h-[54px] w-24" onMouseEnter={previewUrl ? onPreviewStart : undefined} onMouseLeave={previewUrl ? onPreviewEnd : undefined}>
+      <img alt="" className={cn("h-[54px] w-24 rounded border border-border object-cover", isPreviewing && previewUrl && "invisible")} src={src} />
       {previewUrl && isPreviewing ? (
         <video
           ref={videoRef}
-          className="absolute inset-0 h-7 w-11 rounded border border-border object-cover"
+          className="absolute inset-0 h-[54px] w-24 rounded border border-border object-cover"
           muted
           playsInline
           preload="metadata"
@@ -616,23 +672,5 @@ function SelectControl({
         {children}
       </select>
     </label>
-  );
-}
-
-interface MetricProps {
-  label: string;
-  value: number;
-  icon: typeof Clapperboard;
-}
-
-function Metric({ label, value, icon: Icon }: MetricProps): JSX.Element {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <Icon className="size-4 text-primary" />
-      </div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-    </div>
   );
 }

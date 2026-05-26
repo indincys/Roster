@@ -42,7 +42,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: "工作台",
     items: [
       { id: "dashboard", label: "概览", icon: LayoutDashboard },
-      { id: "tasks", label: "任务单", icon: LayoutList, badge: 3 }
+      { id: "tasks", label: "任务单", icon: LayoutList }
     ]
   },
   {
@@ -50,8 +50,8 @@ export const navigationGroups: NavigationGroup[] = [
     label: "生成工作区",
     items: [
       { id: "titles", label: "标题", icon: Type },
-      { id: "images", label: "图片工作室", icon: WandSparkles, badge: "hot" },
-      { id: "covers", label: "封面", icon: Clapperboard, badge: 38 },
+      { id: "images", label: "图片工作室", icon: WandSparkles },
+      { id: "covers", label: "封面", icon: Clapperboard },
       { id: "scripts", label: "文案", icon: ScrollText }
     ]
   },

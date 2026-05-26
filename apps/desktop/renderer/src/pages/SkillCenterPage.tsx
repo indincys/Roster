@@ -14,6 +14,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StatusStrip, WorkbenchHeader } from "@/components/workbench";
 import { configuredLlmModelsFromApiKeys } from "@/lib/provider-options";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
@@ -436,14 +437,12 @@ export function SkillCenterPage(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-5" data-skill-center>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">Skill 中心</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            全局 Skill 池，当前工作空间：{workspace?.name ?? "未选择"}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <WorkbenchHeader
+        eyebrow="生成规则"
+        title="Skill 中心"
+        description={`全局 Skill 池，当前工作空间：${workspace?.name ?? "未选择"}。左侧选择对象，中间编辑文件，右侧查看启用和快照。`}
+        actions={
+          <>
           <Button variant="outline" onClick={loadSkills} disabled={loading}>
             刷新
           </Button>
@@ -451,8 +450,18 @@ export function SkillCenterPage(): JSX.Element {
             <Plus />
             新建 Skill
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
+
+      <StatusStrip
+        items={[
+          { label: "Skill 总数", value: skills.length, hint: "全局可管理", tone: "neutral" },
+          { label: "已启用", value: enabledIds.size, hint: "当前工作空间", tone: enabledIds.size > 0 ? "success" : "warning" },
+          { label: "当前对象", value: selected ? 1 : 0, hint: selected?.displayName ?? "新建或选择 Skill", tone: selected ? "info" : "neutral" },
+          { label: "快照", value: snapshots.length, hint: "可恢复版本", tone: snapshots.length > 0 ? "info" : "neutral" }
+        ]}
+      />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="min-h-0 overflow-hidden rounded-lg border border-border bg-card">

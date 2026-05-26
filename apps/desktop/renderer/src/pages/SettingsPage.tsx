@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { StatusStrip, WorkbenchHeader } from "@/components/workbench";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 
 interface SimpleProviderPreset {
@@ -630,10 +631,20 @@ export function SettingsPage(): JSX.Element {
 
   return (
     <div className="flex min-h-full flex-col gap-4 p-5">
-      <div>
-        <h1 className="text-xl font-semibold">设置</h1>
-        <p className="mt-1 text-sm text-muted-foreground">管理工作空间、路径映射、凭证和基础维护能力。</p>
-      </div>
+      <WorkbenchHeader
+        eyebrow="系统配置"
+        title="设置"
+        description="按路径、账号、Provider、备份和更新分组管理基础能力。风险和检查结果会靠近对应配置。"
+      />
+
+      <StatusStrip
+        items={[
+          { label: "工作空间", value: workspace ? 1 : 0, hint: workspace?.name ?? "未创建", tone: workspace ? "success" : "warning" },
+          { label: "API Key", value: apiKeys.length, hint: `文本 ${apiKeys.filter((record) => record.kind === "text").length} / 图片 ${apiKeys.filter((record) => record.kind === "image").length}`, tone: apiKeys.length > 0 ? "info" : "warning" },
+          { label: "平台账号", value: platformAccounts.length, hint: `${platformAccounts.filter((account) => account.enabled).length} 个启用`, tone: platformAccounts.length > 0 ? "success" : "neutral" },
+          { label: "更新状态", value: updateCheck ? 1 : 0, hint: updateCheck?.state ?? "未检查", tone: updateCheck?.state === "error" ? "danger" : "neutral" }
+        ]}
+      />
 
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       {savedMessage ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{savedMessage}</div> : null}

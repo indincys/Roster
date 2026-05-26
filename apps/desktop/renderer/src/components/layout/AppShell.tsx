@@ -82,7 +82,7 @@ export function AppShell({ children }: AppShellProps): JSX.Element {
           </div>
           {!sidebarCollapsed && (
             <>
-              <div className="text-[15px] font-bold tracking-tight">pillar</div>
+              <div className="text-[15px] font-bold tracking-tight">Roster</div>
               <span className="ml-1.5 text-[11px] text-muted-foreground">内容生产工作台</span>
             </>
           )}
@@ -108,9 +108,12 @@ export function AppShell({ children }: AppShellProps): JSX.Element {
         </button>
 
         <div className="ml-auto flex items-center gap-1">
-          <Badge variant="info" className="gap-1">
-            <Clock3 className="size-3" />3 个待执行
-          </Badge>
+          {taskBadgeCount > 0 ? (
+            <Badge variant="info" className="gap-1">
+              <Clock3 className="size-3" />
+              后台任务 {taskBadgeCount}
+            </Badge>
+          ) : null}
           {showUpdateAction ? (
             <Button
               variant="outline"

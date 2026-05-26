@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { CalendarClock, CalendarDays, Clock3, Database, LayoutList, Plus, RefreshCw, Send, Settings2, Tags, Type, Users } from "lucide-react";
+import { CalendarClock, CalendarDays, Database, LayoutList, Plus, RefreshCw, Settings2, Tags, Type, Users } from "lucide-react";
 import type {
   PlatformAccountRecord,
   TaskRowRecord,
@@ -14,6 +14,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StatusStrip, WorkbenchHeader } from "@/components/workbench";
 import { cn } from "@/lib/utils";
 import { activeWorkspace, useAppStore } from "@/stores/app-store";
 
@@ -49,6 +50,7 @@ const taskStatusVariant: Record<TaskRowStatus, "neutral" | "success" | "warning"
 const selectClass =
   "h-9 rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15";
 const emptyTaskRows: TaskRowRecord[] = [];
+const taskRowGrid = "grid-cols-[36px_72px_92px_132px_100px_minmax(260px,1.4fr)_minmax(180px,1fr)_minmax(160px,1fr)_140px]";
 
 function todayLocalDate(): string {
   const now = new Date();
@@ -99,6 +101,8 @@ export function TasksPage(): JSX.Element {
   const [editPublishTime, setEditPublishTime] = useState("");
   const [editTitleText, setEditTitleText] = useState("");
   const [editTagsText, setEditTagsText] = useState("");
+  const [configOpen, setConfigOpen] = useState(true);
+  const [libraryCounts, setLibraryCounts] = useState({ videos: 0, titles: 0, tags: 0 });
   const parentRef = useRef<HTMLDivElement>(null);
 
   const todayDate = useMemo(() => todayLocalDate(), []);
@@ -144,14 +148,22 @@ export function TasksPage(): JSX.Element {
       setAccounts([]);
       setSheet(null);
       setSelectedAccountIds([]);
+      setLibraryCounts({ videos: 0, titles: 0, tags: 0 });
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const [nextAccounts, nextSheet] = await Promise.all([window.roster.listPlatformAccounts(), window.roster.getTaskSheetByDate(sheetDate)]);
+      const [nextAccounts, nextSheet, videos, titles, tags] = await Promise.all([
+        window.roster.listPlatformAccounts(),
+        window.roster.getTaskSheetByDate(sheetDate),
+        window.roster.listVideos(),
+        window.roster.listTitles(),
+        window.roster.listTags()
+      ]);
       setAccounts(nextAccounts);
       setSheet(nextSheet);
+      setLibraryCounts({ videos: videos.length, titles: titles.length, tags: tags.length });
       setSelectedAccountIds((current) => {
         const existingIds = new Set(nextAccounts.map((account) => account.id));
         const kept = current.filter((id) => existingIds.has(id));
@@ -177,6 +189,12 @@ export function TasksPage(): JSX.Element {
     }),
     [taskRows]
   );
+
+  useEffect(() => {
+    if (taskRows.length > 0) {
+      setConfigOpen(false);
+    }
+  }, [taskRows.length]);
 
   const toggleAccount = (accountId: string): void => {
     setSelectedAccountIds((current) =>
@@ -548,26 +566,29 @@ export function TasksPage(): JSX.Element {
 
   return (
     <div className="flex min-h-full flex-col gap-4 p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">任务单</h1>
-          <p className="mt-1 text-sm text-muted-foreground">按视频 × 平台账号展开发布计划，生成后写入当前工作空间数据库。</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <WorkbenchHeader
+        eyebrow="发布执行工作台"
+        title="任务单"
+        description="按生成前、生成后、执行后三个阶段管理任务。生成后表格是主对象，配置会收起成摘要。"
+        actions={
+          <>
           <Input aria-label="任务日期" className="h-8 w-40" type="date" value={sheetDate} onChange={(event) => setSheetDate(event.target.value)} />
           <Button variant="outline" size="sm" onClick={loadTaskContext} disabled={loading}>
             <RefreshCw className={cn(loading && "animate-spin")} />
             刷新
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-4 gap-3">
-        <Metric label="任务行" value={stats.all} icon={LayoutList} />
-        <Metric label="待执行" value={stats.pending} icon={Clock3} />
-        <Metric label="成功" value={stats.success} icon={Send} />
-        <Metric label="失败" value={stats.failed} icon={Settings2} />
-      </div>
+      <StatusStrip
+        items={[
+          { label: "任务行", value: stats.all, hint: sheet ? `${sheet.name} · ${sheet.status === "draft" ? "草稿" : sheet.status}` : "未生成", tone: "neutral" },
+          { label: "待执行", value: stats.pending, hint: "RPA 尚未返回结果", tone: stats.pending > 0 ? "info" : "neutral" },
+          { label: "成功", value: stats.success, hint: "状态文件已确认", tone: stats.success > 0 ? "success" : "neutral" },
+          { label: "失败", value: stats.failed, hint: "可在表格内直接重试", tone: stats.failed > 0 ? "danger" : "neutral" }
+        ]}
+      />
 
       <section className="rounded-lg border border-border bg-card">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -577,14 +598,27 @@ export function TasksPage(): JSX.Element {
             <Badge variant="neutral">{videoCount} 视频 × {selectedAccountIds.length} 平台 = {estimatedRows} 行</Badge>
             {isHistoricalDate ? <Badge variant="warning">历史只读</Badge> : null}
           </div>
-          <Button variant="primary" onClick={generateSheet} disabled={loading || isHistoricalDate}>
-            <LayoutList />
-            一键生成任务单
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setConfigOpen((open) => !open)}>
+              {configOpen ? "收起配置" : "展开配置"}
+            </Button>
+            <Button variant="primary" onClick={generateSheet} disabled={loading || isHistoricalDate}>
+              <LayoutList />
+              一键生成任务单
+            </Button>
+          </div>
         </div>
 
         {error ? <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div> : null}
 
+        <div className="grid grid-cols-4 gap-2 border-b border-border bg-muted/30 px-4 py-3 text-xs" data-task-preflight>
+          <PreflightItem label="视频库" value={libraryCounts.videos} ok={libraryCounts.videos >= videoCount} />
+          <PreflightItem label="标题库" value={libraryCounts.titles} ok={libraryCounts.titles > 0} />
+          <PreflightItem label="标签库" value={libraryCounts.tags} ok={libraryCounts.tags > 0} />
+          <PreflightItem label="平台账号" value={selectedAccountIds.length} ok={selectedAccountIds.length > 0} />
+        </div>
+
+        {configOpen ? (
         <div className="grid grid-cols-[1.05fr_1.25fr_1fr_1.1fr] gap-4 p-4">
           <ConfigBlock icon={LayoutList} title="视频筛选">
             <label className="flex flex-col gap-1.5 text-sm">
@@ -705,6 +739,15 @@ export function TasksPage(): JSX.Element {
             </label>
           </ConfigBlock>
         </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
+            <span>配置摘要：</span>
+            <Badge variant="neutral">{videoStrategyOptions.find((option) => option.value === videoStrategy)?.label}</Badge>
+            <Badge variant="neutral">{titleStrategyOptions.find((option) => option.value === titleStrategy)?.label}</Badge>
+            <Badge variant="neutral">默认标签 {defaultTagRatio}%</Badge>
+            <Badge variant="neutral">抖动 ±{jitterMinutes} 分钟</Badge>
+          </div>
+        )}
       </section>
 
       <section className="min-w-0 rounded-lg border border-border bg-card">
@@ -753,7 +796,7 @@ export function TasksPage(): JSX.Element {
           </div>
         ) : null}
 
-        <div className="grid h-9 grid-cols-[36px_88px_72px_92px_132px_100px_minmax(220px,1.4fr)_minmax(200px,1.2fr)_88px_minmax(180px,1fr)] items-center border-b border-border bg-muted/50 px-4 text-xs font-medium text-muted-foreground">
+        <div className={cn("grid h-9 items-center border-b border-border bg-muted/50 px-4 text-xs font-medium text-muted-foreground", taskRowGrid)}>
           <div>
             <input
               aria-label="选择全部任务行"
@@ -764,7 +807,6 @@ export function TasksPage(): JSX.Element {
               onChange={toggleAllTaskRows}
             />
           </div>
-          <div>任务 ID</div>
           <div>时间</div>
           <div>平台</div>
           <div>账号</div>
@@ -772,7 +814,7 @@ export function TasksPage(): JSX.Element {
           <div>标题</div>
           <div>标签</div>
           <div>状态</div>
-          <div>Run Key</div>
+          <div>错误</div>
         </div>
 
         {taskRows.length === 0 ? (
@@ -790,7 +832,11 @@ export function TasksPage(): JSX.Element {
             )}
           </div>
         ) : (
-          <div ref={parentRef} className="h-[calc(100vh-514px)] min-h-80 overflow-auto">
+          <div
+            ref={parentRef}
+            className="min-h-80 overflow-auto"
+            style={{ height: configOpen ? "calc(100vh - 560px)" : "calc(100vh - 440px)" }}
+          >
             <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
               {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                 const row = taskRows[virtualRow.index];
@@ -890,7 +936,8 @@ function TaskRow({
       data-task-row
       data-task-status={row.status}
       className={cn(
-        "absolute left-0 grid w-full cursor-default grid-cols-[36px_88px_72px_92px_132px_100px_minmax(220px,1.4fr)_minmax(200px,1.2fr)_88px_minmax(180px,1fr)] items-center border-b border-border/70 px-4 text-sm transition-colors hover:bg-muted/50",
+        "absolute left-0 grid w-full cursor-default items-center border-b border-border/70 px-4 text-sm transition-colors hover:bg-muted/50",
+        taskRowGrid,
         highlighted && "bg-amber-50"
       )}
       style={{ height: `${size}px`, transform: `translateY(${start}px)` }}
@@ -906,9 +953,6 @@ function TaskRow({
           onChange={() => onToggleSelected(row.id)}
           onDoubleClick={(event) => event.stopPropagation()}
         />
-      </div>
-      <div className="truncate font-mono text-xs" title={row.id}>
-        {shortTaskId(row.id)}
       </div>
       <div className="text-xs text-muted-foreground">{formatPublishTime(row.publishAt)}</div>
       <div className="truncate font-medium">{row.platform}</div>
@@ -943,9 +987,18 @@ function TaskRow({
           ) : null}
         </div>
       </div>
-      <div className="truncate font-mono text-xs text-muted-foreground" title={row.runKey}>
-        {row.runKey}
+      <div className="truncate text-xs text-red-700" title={row.errorMessage ?? row.runKey}>
+        {row.errorMessage ?? row.runKey}
       </div>
+    </div>
+  );
+}
+
+function PreflightItem({ label, ok, value }: { label: string; ok: boolean; value: number }): JSX.Element {
+  return (
+    <div className={cn("rounded-md border px-3 py-2", ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800")}>
+      <div className="text-[11px] text-current/70">{label}</div>
+      <div className="mt-1 font-mono text-base font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
@@ -958,18 +1011,6 @@ function ConfigBlock({ children, icon: Icon, title }: { children: ReactNode; ico
         {title}
       </div>
       {children}
-    </div>
-  );
-}
-
-function Metric({ label, value, icon: Icon }: { label: string; value: number; icon: typeof LayoutList }): JSX.Element {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <Icon className="size-4 text-primary" />
-      </div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
     </div>
   );
 }
