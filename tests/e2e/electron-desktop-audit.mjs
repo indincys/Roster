@@ -21,6 +21,8 @@ const appRoot = path.join(repoRoot, "apps", "desktop");
 const mainEntry = path.join(appRoot, "out", "main", "index.js");
 const rendererEntry = path.join(appRoot, "out", "renderer", "index.html");
 const requiredWorkspaceDirs = ["videos", "covers", "images", "tasks", "skills_config", "_backup"];
+const desktopPackage = JSON.parse(await readFile(path.join(appRoot, "package.json"), "utf8"));
+const mockUpdateVersion = nextPatchVersion(desktopPackage.version);
 const auditRoot = await mkdtemp(path.join(tmpdir(), "roster-electron-audit-"));
 const userDataDir = path.join(auditRoot, "user-data");
 const workspaceRoot = path.join(auditRoot, "workspace");
@@ -42,6 +44,12 @@ function resolveElectronBinary() {
     }
   }
   return path.join(repoRoot, "node_modules", ".bin", "electron");
+}
+
+function nextPatchVersion(version) {
+  const match = String(version).match(/^(\d+)\.(\d+)\.(\d+)$/);
+  assert(match, `desktop package version must be semver x.y.z, actual=${version}`);
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
 }
 
 function assert(condition, message) {
@@ -282,9 +290,9 @@ async function main() {
     updateManifestPath,
     `${JSON.stringify(
       {
-        version: "0.2.2",
+        version: mockUpdateVersion,
         releaseNotes: "Electron e2e update manifest",
-        downloadUrl: "https://example.invalid/roster/0.2.2"
+        downloadUrl: `https://example.invalid/roster/${mockUpdateVersion}`
       },
       null,
       2
@@ -2042,14 +2050,14 @@ async function main() {
       () =>
         evaluate(
           client,
-          `document.querySelector('[data-update-check-result]')?.innerText.includes("发现新版本") && document.body.innerText.includes("0.2.2")`
+          `document.querySelector('[data-update-check-result]')?.innerText.includes("发现新版本") && document.body.innerText.includes(${js(mockUpdateVersion)})`
         ),
       "software update check completed from real settings UI",
       10_000
     );
     const updateCheck = await evaluate(client, `window.roster.checkForUpdates({ forceRefresh: true })`);
-    assert(updateCheck.updateAvailable && updateCheck.latestVersion === "0.2.2", "update check did not parse local manifest");
-    assert(updateCheck.downloadUrl === "https://example.invalid/roster/0.2.2", "update check download URL mismatch");
+    assert(updateCheck.updateAvailable && updateCheck.latestVersion === mockUpdateVersion, "update check did not parse local manifest");
+    assert(updateCheck.downloadUrl === `https://example.invalid/roster/${mockUpdateVersion}`, "update check download URL mismatch");
     await evaluate(client, `document.querySelector('[data-backup-workspace]').click()`);
     await waitFor(
       () => evaluate(client, `document.querySelector('[data-backup-path]') !== null && document.body.innerText.includes("已生成备份")`),
